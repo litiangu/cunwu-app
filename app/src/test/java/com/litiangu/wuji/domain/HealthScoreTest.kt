@@ -5,7 +5,7 @@ import org.junit.Test
 
 class HealthScoreTest {
 
-    // 草案第四节示例：单件已售 iPhone。期望 ≈40.8，最低档。
+    // 草案第四节示例：单件已售 iPhone。v0.4 权重(0.50/0.40/0.05/0.05)下 ≈43.6，仍最低档。
     @Test
     fun iphoneExample_matchesDraft() {
         val items = listOf(
@@ -19,7 +19,7 @@ class HealthScoreTest {
             )
         )
         val r = computeHealthScore(items)
-        assertEquals(40.8, r.total, 0.2)
+        assertEquals(43.6, r.total, 0.2)
         assertEquals(HealthGrade.POOR, r.grade)
         assertEquals("断舍离时刻", r.comment)
         // 四维子分核对
@@ -37,12 +37,32 @@ class HealthScoreTest {
         assertEquals(HealthGrade.POOR, r.grade)
     }
 
-    // 全部使用中且便宜：D1=100、D2=100、D3=0、D4=0 → 70（良）。
+    // 全部使用中且便宜：D1=100、D2=100、D3=0、D4=0 → 0.50*100+0.40*100 = 90（优）。
+    // 正是 v0.4 权重调整要达成的结果：高利用率 + 高价值健康即可到「优」，无需售出/变现。
     @Test
-    fun allInUseCheap_isGood() {
+    fun allInUseCheap_isExcellent() {
         val items = List(10) {
             ItemInput(
                 isInUse = true,
+                isSold = false,
+                purchasePrice = 100.0,
+                extraCost = 0.0,
+                resaleValue = 0.0,
+                companionshipDays = 365
+            )
+        }
+        val r = computeHealthScore(items)
+        assertEquals(90.0, r.total, 0.001)
+        assertEquals(HealthGrade.EXCELLENT, r.grade)
+        assertEquals("少即是多", r.comment)
+    }
+
+    // 中高利用率(60%)+便宜：D1=60、D2=100、D3=0、D4=0 → 0.50*60+0.40*100 = 70（良）。
+    @Test
+    fun highUsageDecentValue_isGood() {
+        val items = List(10) {
+            ItemInput(
+                isInUse = it < 6,        // 6/10 使用中
                 isSold = false,
                 purchasePrice = 100.0,
                 extraCost = 0.0,
@@ -56,7 +76,7 @@ class HealthScoreTest {
         assertEquals("张弛有度", r.comment)
     }
 
-    // 零持有成本（净投入≤0）→ D2 满分，不应除零。
+    // 零持有成本（净投入≤0）→ D2 满分，不应除零。v0.4 权重下 0.50*100+0.40*100=90。
     @Test
     fun zeroCost_notDivByZero() {
         val items = listOf(
@@ -71,7 +91,7 @@ class HealthScoreTest {
         )
         val r = computeHealthScore(items)
         assertEquals(100.0, r.dimensions.d2ValueHealth, 0.001)
-        assertEquals(70, r.totalRounded) // 0.4*100 + 0.3*100 = 70
+        assertEquals(90, r.totalRounded)
     }
 
     // D3 流转率封顶 50%：全部已售也只到 50，不会更高。
@@ -108,8 +128,8 @@ class HealthScoreTest {
         assertEquals(60.0, r.dimensions.d4Recovery, 0.001)
     }
 
-    // 等级阈值边界（四档 85/70/50）。EXCELLENT 在定稿权重下实际不可达，
-    // 但阈值函数本身需正确，供后续若调整阈值/权重时复用。
+    // 等级阈值边界（四档 85/70/50）。v0.4 权重下 EXCELLENT 已可达（见 allInUseCheap_isExcellent），
+    // 此测试仅校验阈值函数本身的正确性，供后续调阈值/权重时复用。
     @Test
     fun gradeThresholds() {
         assertEquals(HealthGrade.EXCELLENT, gradeFromScore(85.0))

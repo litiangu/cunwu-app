@@ -6,7 +6,9 @@ package com.litiangu.wuji.domain
  * 设计要点（来自《健康分加权模型设计草案》v0.3 定稿）：
  * - 健康分是「全库健康度」，四个维度全部是集合级聚合，不是单物品分。
  *   （03 计划文档写的 computeScore(item) 是简化，实际按草案的集合聚合实现。）
- * - 公式：score = 0.40·D1 + 0.30·D2 + 0.15·D3 + 0.15·D4
+ * - 公式：score = 0.50·D1 + 0.40·D2 + 0.05·D3 + 0.05·D4（v0.4 起调）
+ *   D1 利用率 / D2 价值健康度主导（合计 0.90），D3 流转率 / D4 变现回收降为微调项（合计 0.10），
+ *   使优(≥85)可由「高利用率 + 高价值健康」直接达到，不再被售出/变现隐性卡门槛。
  *   D3 流转率封顶 50%，D4 变现回收封顶 60%。
  * - 本文件保持纯 Kotlin（不依赖 Android / Room），便于 JVM 单测。
  */
@@ -54,11 +56,13 @@ data class HealthScoreResult(
     val colorHex: String
 )
 
-// 权重（合计 1.0，已定稿）
-private const val W_D1 = 0.40   // 利用率（高）
-private const val W_D2 = 0.30   // 价值健康度（中）
-private const val W_D3 = 0.15   // 流转率（低）
-private const val W_D4 = 0.15   // 变现回收（低）
+// 权重（合计 1.0）。v0.4 起调：D1 利用率 / D2 价值健康度主导（合计 0.90），
+// D3 流转率 / D4 变现回收降为微调项（合计 0.10），使优(≥85)可由「高利用率 + 高价值健康」直接达到，
+// 不再被售出 / 变现隐性卡门槛。详见《健康分加权模型设计草案》权重调整记录。
+private const val W_D1 = 0.50   // 利用率（主导）
+private const val W_D2 = 0.40   // 价值健康度（主导）
+private const val W_D3 = 0.05   // 流转率（微调）
+private const val W_D4 = 0.05   // 变现回收（微调）
 
 // 封顶
 private const val D3_CAP = 0.50 // 流转率封顶 50%
