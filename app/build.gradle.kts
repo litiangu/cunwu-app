@@ -56,6 +56,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
 
     // 测试
+    testImplementation(libs.junit)                       // JVM 单元测试（Step3 健康分引擎）
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }
