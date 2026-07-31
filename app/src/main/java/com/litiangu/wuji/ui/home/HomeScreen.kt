@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -29,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.data.settings.DarkModePref
+import com.litiangu.wuji.ui.analysis.AnalysisScreen
 import com.litiangu.wuji.ui.item.ItemEditScreen
 import com.litiangu.wuji.ui.settings.SettingsScreen
 
@@ -46,8 +48,11 @@ fun HomeScreen() {
     }
     var editTarget by remember { mutableStateOf<EditTarget?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    var showAnalysis by remember { mutableStateOf(false) }
 
-    if (showSettings) {
+    if (showAnalysis) {
+        AnalysisScreen(onBack = { showAnalysis = false })
+    } else if (showSettings) {
         SettingsScreen(onBack = { showSettings = false })
     } else {
         when (val target = editTarget) {
@@ -57,7 +62,8 @@ fun HomeScreen() {
                 viewModel = viewModel,
                 onNew = { editTarget = EditTarget.New },
                 onEdit = { id -> editTarget = EditTarget.Existing(id) },
-                onOpenSettings = { showSettings = true }
+                onOpenSettings = { showSettings = true },
+                onOpenAnalysis = { showAnalysis = true }
             )
         }
     }
@@ -69,7 +75,8 @@ private fun HomeContent(
     viewModel: HomeViewModel,
     onNew: () -> Unit,
     onEdit: (Long) -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenAnalysis: () -> Unit
 ) {
     val rows by viewModel.rows.collectAsStateWithLifecycle(emptyList())
     val privacy by viewModel.privacyMode.collectAsStateWithLifecycle(false)
@@ -94,6 +101,9 @@ private fun HomeContent(
                     }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "设置")
+                    }
+                    IconButton(onClick = onOpenAnalysis) {
+                        Icon(Icons.Filled.BarChart, contentDescription = "分析")
                     }
                 }
             )
