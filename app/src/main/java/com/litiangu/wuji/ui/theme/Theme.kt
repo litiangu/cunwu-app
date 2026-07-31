@@ -6,52 +6,81 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.graphics.Color
-
-// 浅色方案：以品牌橙为主色，明底
-private val LightColorScheme = lightColorScheme(
-    primary = BrandOrange,
-    secondary = CatApplianceLight,
-    tertiary = CatFurnitureLight,
-    background = Color(0xFFFCFCFC),
-    surface = Color(0xFFFFFFFF),
-    onPrimary = Color(0xFFFFFFFF),
-    onSecondary = Color(0xFFFFFFFF),
-    onTertiary = Color(0xFFFFFFFF),
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-)
-
-// 深色方案：主色保持品牌橙，暗底（来源：深色模式令牌清单 -night）
-private val DarkColorScheme = darkColorScheme(
-    primary = BrandOrange,
-    secondary = CatApplianceDark,
-    tertiary = CatFurnitureDark,
-    background = Color(0xFF121212),
-    surface = Color(0xFF1E1E1E),
-    onPrimary = Color(0xFFFFFFFF),
-    onSecondary = Color(0xFFFFFFFF),
-    onTertiary = Color(0xFFFFFFFF),
-    onBackground = Color(0xFFE0E0E0),
-    onSurface = Color(0xFFE0E0E0),
-)
 
 @Composable
 fun WujiTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // 关闭动态取色，统一使用品牌令牌
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
-    val categoryPalette = if (darkTheme) DarkCategoryPalette else LightCategoryPalette
-    val gradePalette = if (darkTheme) DarkGradePalette else LightGradePalette
-    CompositionLocalProvider(
-        LocalCategoryPalette provides categoryPalette,
-        LocalGradePalette provides gradePalette
-    ) {
+    val colorScheme = if (darkTheme) {
+        darkColorScheme(
+            primary = PrimaryDark,
+            onPrimary = OnPrimaryDark,
+            primaryContainer = PrimaryContainerDark,
+            onPrimaryContainer = OnPrimaryContainerDark,
+            secondary = SecondaryDark,
+            onSecondary = OnSecondaryDark,
+            secondaryContainer = SecondaryContainerDark,
+            onSecondaryContainer = OnSecondaryContainerDark,
+            tertiary = TertiaryDark,
+            onTertiary = OnTertiaryDark,
+            tertiaryContainer = TertiaryContainerDark,
+            onTertiaryContainer = OnTertiaryContainerDark,
+            background = BackgroundDark,
+            onBackground = OnBackgroundDark,
+            surface = SurfaceDark,
+            onSurface = OnSurfaceDark,
+            surfaceVariant = SurfaceVariantDark,
+            onSurfaceVariant = OnSurfaceVariantDark,
+            surfaceContainerLowest = SurfaceContainerLowestDark,
+            surfaceContainerLow = SurfaceContainerLowDark,
+            surfaceContainer = SurfaceContainerDark,
+            surfaceContainerHigh = SurfaceContainerHighDark,
+            surfaceContainerHighest = SurfaceContainerHighestDark,
+            error = ErrorDark,
+            onError = OnErrorDark,
+            errorContainer = ErrorContainerDark,
+            onErrorContainer = OnErrorContainerDark,
+            outline = OutlineDark,
+            outlineVariant = OutlineVariantDark
+        )
+    } else {
+        lightColorScheme(
+            primary = PrimaryLight,
+            onPrimary = OnPrimaryLight,
+            primaryContainer = PrimaryContainerLight,
+            onPrimaryContainer = OnPrimaryContainerLight,
+            secondary = SecondaryLight,
+            onSecondary = OnSecondaryLight,
+            secondaryContainer = SecondaryContainerLight,
+            onSecondaryContainer = OnSecondaryContainerLight,
+            tertiary = TertiaryLight,
+            onTertiary = OnTertiaryLight,
+            tertiaryContainer = TertiaryContainerLight,
+            onTertiaryContainer = OnTertiaryContainerLight,
+            background = BackgroundLight,
+            onBackground = OnBackgroundLight,
+            surface = SurfaceLight,
+            onSurface = OnSurfaceLight,
+            surfaceVariant = SurfaceVariantLight,
+            onSurfaceVariant = OnSurfaceVariantLight,
+            surfaceContainerLowest = SurfaceContainerLowestLight,
+            surfaceContainerLow = SurfaceContainerLowLight,
+            surfaceContainer = SurfaceContainerLight,
+            surfaceContainerHigh = SurfaceContainerHighLight,
+            surfaceContainerHighest = SurfaceContainerHighestLight,
+            error = ErrorLight,
+            onError = OnErrorLight,
+            errorContainer = ErrorContainerLight,
+            onErrorContainer = OnErrorContainerLight,
+            outline = OutlineLight,
+            outlineVariant = OutlineVariantLight
+        )
+    }
+    CompositionLocalProvider(LocalTints provides if (darkTheme) DarkTints else LightTints) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = Typography,
+            typography = WujiTypography,
             content = content
         )
     }

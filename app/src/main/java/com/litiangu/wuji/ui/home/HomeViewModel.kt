@@ -5,8 +5,8 @@ import androidx.lifecycle.viewModelScope
 import android.content.Context
 import com.litiangu.wuji.data.db.ItemDao
 import com.litiangu.wuji.data.db.CategoryDao
+import com.litiangu.wuji.data.toUiModel
 import com.litiangu.wuji.data.settings.SettingsDataStore
-import com.litiangu.wuji.data.settings.DarkModePref
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -17,16 +17,22 @@ class HomeViewModel(
 ) : ViewModel() {
 
     private val settings = SettingsDataStore(context)
-    private val _selectedCategory = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
-    val selectedCategory = _selectedCategory.asStateFlow()
 
-    fun selectCategory(key: String?) { _selectedCategory.value = key }
+    private val _selectedColorKey = MutableStateFlow<String?>(null)
+    val selectedColorKey = _selectedColorKey.asStateFlow()
+
+    fun selectColorKey(key: String?) { _selectedColorKey.value = key }
 
     val categories = categoryDao.observeAll()
 
-    val rows = combine(itemDao.observeAll(), settings.privacyModeFlow) { entities, privacy ->
-        mapToRows(entities, privacy, categoryDao)
+    val items: StateFlow<List<ItemUiModel>> = combine(
+        itemDao.observeAll(),
+        categoryDao.observeAll(),
+    ) { entities, cats ->
+        val keyById = cats.associate { it.id to it.colorKey }
+        entities.map { it.toUiModel().copy(categoryKey = it.categoryId?.let { id -> keyById[id] }) }
     }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val privacyMode = settings.privacyModeFlow
     val darkMode = settings.darkModeFlow
