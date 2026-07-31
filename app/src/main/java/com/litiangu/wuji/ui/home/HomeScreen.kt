@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.data.settings.DarkModePref
 import com.litiangu.wuji.ui.item.ItemEditScreen
+import com.litiangu.wuji.ui.settings.SettingsScreen
 
 /**
  * 首页：物品列表 + 分类筛选 + 隐私开关。
@@ -43,15 +45,21 @@ fun HomeScreen() {
         HomeViewModel(db.itemDao(), db.categoryDao(), context)
     }
     var editTarget by remember { mutableStateOf<EditTarget?>(null) }
+    var showSettings by remember { mutableStateOf(false) }
 
-    when (val target = editTarget) {
-        is EditTarget.New -> ItemEditScreen(itemId = null, onDone = { editTarget = null })
-        is EditTarget.Existing -> ItemEditScreen(itemId = target.id, onDone = { editTarget = null })
-        null -> HomeContent(
-            viewModel = viewModel,
-            onNew = { editTarget = EditTarget.New },
-            onEdit = { id -> editTarget = EditTarget.Existing(id) }
-        )
+    if (showSettings) {
+        SettingsScreen(onBack = { showSettings = false })
+    } else {
+        when (val target = editTarget) {
+            is EditTarget.New -> ItemEditScreen(itemId = null, onDone = { editTarget = null })
+            is EditTarget.Existing -> ItemEditScreen(itemId = target.id, onDone = { editTarget = null })
+            null -> HomeContent(
+                viewModel = viewModel,
+                onNew = { editTarget = EditTarget.New },
+                onEdit = { id -> editTarget = EditTarget.Existing(id) },
+                onOpenSettings = { showSettings = true }
+            )
+        }
     }
 }
 
@@ -60,7 +68,8 @@ fun HomeScreen() {
 private fun HomeContent(
     viewModel: HomeViewModel,
     onNew: () -> Unit,
-    onEdit: (Long) -> Unit
+    onEdit: (Long) -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     val rows by viewModel.rows.collectAsStateWithLifecycle(emptyList())
     val privacy by viewModel.privacyMode.collectAsStateWithLifecycle(false)
@@ -82,6 +91,9 @@ private fun HomeContent(
                             if (privacy) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
                             contentDescription = "切换隐私模式"
                         )
+                    }
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Filled.Settings, contentDescription = "设置")
                     }
                 }
             )
