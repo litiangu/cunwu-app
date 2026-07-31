@@ -1,5 +1,7 @@
 package com.litiangu.wuji.domain
 
+import kotlin.math.roundToInt
+
 /**
  * 健康分计算引擎（H2 模型）。
  *
