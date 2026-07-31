@@ -57,7 +57,7 @@ object WujiDatabaseProvider {
                 WujiDatabase::class.java,
                 WujiDatabase.DATABASE_NAME
             )
-                .fallbackToDestructiveMigration() // Step2 暂无迁移；版本升级时在此加 Migration
+                .fallbackToDestructiveMigration(true) // Step2 暂无迁移；版本升级时在此加 Migration（dropAllTables=true 开发期可接受，首次改表会清空数据）
                 .build()
                 .also { INSTANCE = it }
                 .also {
