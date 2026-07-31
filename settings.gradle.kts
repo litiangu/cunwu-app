@@ -1,5 +1,9 @@
 pluginManagement {
     repositories {
+        // 国内镜像前置（加速插件解析，不通自动回退下方官方源）
+        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
         google {
             content {
                 includeGroupByRegex("com\\.android.*")
@@ -17,6 +21,9 @@ plugins {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        // 国内镜像前置（加速依赖解析，不通自动回退下方官方源）
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
         google()
         mavenCentral()
     }
