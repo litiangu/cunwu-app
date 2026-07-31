@@ -59,4 +59,11 @@ dependencies {
     testImplementation(libs.junit)                       // JVM 单元测试（Step3 健康分引擎）
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.material.icons.core)
+    implementation(libs.androidx.material.icons.extended)
+
+    // Step8 导航
+    implementation(libs.androidx.navigation.compose)
 }
