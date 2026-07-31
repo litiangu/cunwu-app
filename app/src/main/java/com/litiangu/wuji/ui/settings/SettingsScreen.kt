@@ -37,12 +37,11 @@ import com.litiangu.wuji.data.settings.DarkModePref
 import com.litiangu.wuji.data.settings.SettingsDataStore
 
 /**
- * 设置页：深色三档 / 隐私模式 / 预算锚点 / 关于。
- * onBack 返回首页。
+ * 设置页（主 tab）：深色三档 / 隐私模式 / 预算锚点 / 关于。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen() {
     val context = LocalContext.current
     val viewModel = remember { SettingsViewModel(SettingsDataStore(context)) }
     val darkMode by viewModel.darkMode.collectAsStateWithLifecycle()
@@ -52,14 +51,7 @@ fun SettingsScreen(onBack: () -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("设置") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                }
-            )
+            TopAppBar(title = { Text("设置") })
         }
     ) { padding ->
         Column(

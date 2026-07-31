@@ -12,7 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import com.litiangu.wuji.data.settings.DarkModePref
 import com.litiangu.wuji.data.settings.SettingsDataStore
-import com.litiangu.wuji.ui.home.HomeScreen
+import com.litiangu.wuji.ui.navigation.AppNav
 import com.litiangu.wuji.ui.theme.WujiTheme
 
 class MainActivity : ComponentActivity() {
@@ -33,7 +33,7 @@ class MainActivity : ComponentActivity() {
                 DarkModePref.YES -> true
             }
             WujiTheme(darkTheme = darkTheme) {
-                HomeScreen()
+                AppNav()
             }
         }
     }
