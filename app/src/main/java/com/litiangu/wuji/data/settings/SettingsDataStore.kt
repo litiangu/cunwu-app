@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.litiangu.wuji.domain.DEFAULT_DAILY_BUDGET_ANCHOR
 import kotlinx.coroutines.flow.Flow
@@ -38,6 +39,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 private val DARK_MODE_KEY = intPreferencesKey("dark_mode")     // 存 DarkModePref.value
 private val PRIVACY_MODE_KEY = booleanPreferencesKey("privacy_mode")
 private val BUDGET_ANCHOR_KEY = doublePreferencesKey("budget_anchor")
+private val VIEW_MODE_KEY = stringPreferencesKey("view_mode")   // list-default / card-2x2 / list-compact
 
 // 设置存储：当前持久化深色三档 + 隐私模式开关。
 // 供设置页（Step6）与主题切换复用。
@@ -63,5 +65,13 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun setBudgetAnchor(value: Double) {
         context.dataStore.edit { it[BUDGET_ANCHOR_KEY] = value }
+    }
+
+    // 首页视图密度三态（list-default / card-2x2 / list-compact），默认 list-default
+    val viewModeFlow: Flow<String> = context.dataStore.data
+        .map { prefs -> prefs[VIEW_MODE_KEY] ?: "list-default" }
+
+    suspend fun setViewMode(mode: String) {
+        context.dataStore.edit { it[VIEW_MODE_KEY] = mode }
     }
 }

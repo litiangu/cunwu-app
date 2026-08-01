@@ -29,6 +29,7 @@ fun CategoryFilterBar(
     selected: String?,
     onSelect: (String?) -> Unit,
     onFilter: () -> Unit = {},
+    filterActive: Boolean = false,
 ) {
     val palette = categoryPalette()
     val colorMap = mapOf(
@@ -79,6 +80,7 @@ fun CategoryFilterBar(
             icon = Icons.Filled.FilterList,
             contentDescription = "筛选与排序",
             onClick = onFilter,
+            showDot = filterActive,
         )
     }
 }

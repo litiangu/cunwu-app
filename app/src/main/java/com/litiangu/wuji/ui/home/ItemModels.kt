@@ -1,5 +1,7 @@
 package com.litiangu.wuji.ui.home
 
+import com.litiangu.wuji.data.db.ItemStatus
+
 data class ItemUiModel(
     val id: Long,
     val name: String,
@@ -13,6 +15,7 @@ data class ItemUiModel(
     val netAsset: Double,
     val healthScore: Double,
     val companionshipDays: Int,
+    val status: ItemStatus,
     val categoryKey: String? = null
 )
 

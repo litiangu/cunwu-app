@@ -16,6 +16,7 @@ fun ItemEntity.toUiModel(): ItemUiModel = ItemUiModel(
     netAsset = purchasePrice + extraCost - resaleValue,
     healthScore = (healthScore ?: 0).toDouble(),
     companionshipDays = frozenCompanionshipDays(purchaseDate),
+    status = status,
 )
 
 private fun frozenCompanionshipDays(purchaseDate: Long): Int {
