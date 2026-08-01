@@ -61,7 +61,9 @@ private val ChartSeries = listOf(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AnalysisScreen() {
+fun AnalysisScreen(
+    onBack: () -> Unit = {},
+) {
     val context = LocalContext.current
     val viewModel = remember {
         val db = WujiDatabaseProvider.get(context)
@@ -71,7 +73,14 @@ fun AnalysisScreen() {
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("分析") })
+            TopAppBar(
+                title = { Text("分析") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+            )
         }
     ) { padding ->
         Column(

@@ -1,6 +1,7 @@
 package com.litiangu.wuji.ui.designsystem
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -14,6 +15,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
+import com.litiangu.wuji.ui.theme.BrandOrange
 import com.litiangu.wuji.ui.theme.WujiSize
 import com.litiangu.wuji.ui.theme.tints
 
@@ -23,6 +26,8 @@ import com.litiangu.wuji.ui.theme.tints
  * 对应 CSS：
  * `w-10 h-10 rounded-full bg-surface-container-lowest shadow-sm
  *  flex items-center justify-center text-secondary`
+ *
+ * showDot=true 时右上角显示橙点（带 surface 描边防被裁），用于筛选弹窗有生效条件。
  */
 @Composable
 fun CircleIconButton(
@@ -30,30 +35,46 @@ fun CircleIconButton(
     contentDescription: String?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    tint: Color = MaterialTheme.colorScheme.secondary
+    tint: Color = MaterialTheme.colorScheme.secondary,
+    showDot: Boolean = false,
 ) {
     val shadowColor = tints().cardShadow
     Box(
-        modifier = modifier
-            .size(WujiSize.circleButton)
-            // shadow-sm：小而近的柔和投影
-            .shadow(
-                elevation = 2.dp0(),
-                shape = CircleShape,
-                ambientColor = shadowColor,
-                spotColor = shadowColor
-            )
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
+        modifier = modifier.size(WujiSize.circleButton),
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(WujiSize.iconSm)
-        )
+        Box(
+            modifier = Modifier
+                .size(WujiSize.circleButton)
+                // shadow-sm：小而近的柔和投影
+                .shadow(
+                    elevation = 2.dp0(),
+                    shape = CircleShape,
+                    ambientColor = shadowColor,
+                    spotColor = shadowColor
+                )
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(WujiSize.iconSm)
+            )
+        }
+        if (showDot) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(BrandOrange)
+                    .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
+            )
+        }
     }
 }
 

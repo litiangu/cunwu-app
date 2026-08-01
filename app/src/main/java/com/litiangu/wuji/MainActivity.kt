@@ -4,15 +4,23 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.data.settings.DarkModePref
 import com.litiangu.wuji.data.settings.SettingsDataStore
+import com.litiangu.wuji.ui.analysis.AnalysisScreen
+import com.litiangu.wuji.ui.designsystem.BottomTab
 import com.litiangu.wuji.ui.home.HomeScreen
 import com.litiangu.wuji.ui.item.ItemEditScreen
 import com.litiangu.wuji.ui.settings.SettingsScreen
@@ -28,9 +36,11 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * 应用根：读取深色偏好驱动主题（三档：跟随系统/浅色/深色），
- * 并在 首页（含 pill 底栏）↔ 新增/编辑页 ↔ 设置页 之间互斥切换。
- * FAB「+」→ ItemEditScreen(null) 新增；顶栏 ⚙ → SettingsScreen；保存/返回 → 回首页。
+ * 应用根：读取深色偏好驱动主题（三档：跟随系统/浅色/深色）。
+ *
+ * 首页常驻，设置/新增/分析以全屏 overlay 叠放其上（保留首页滚动与筛选状态）。
+ * FAB「+」→ ItemEditScreen(null) 新增；顶栏 ⚙ → SettingsScreen；
+ * 底栏「分析」tab → AnalysisScreen；各 overlay 返回后回到常驻首页。
  */
 @Composable
 fun WujiApp() {
@@ -43,19 +53,38 @@ fun WujiApp() {
         else -> isSystemInDarkTheme()
     }
     WujiTheme(darkTheme = darkTheme) {
+        val homeTab = remember { BottomTab("首页", Icons.Filled.Home) }
+        val analysisTab = remember { BottomTab("分析", Icons.Filled.Insights) }
         var showAdd by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
-        when {
-            showSettings -> SettingsScreen(onBack = { showSettings = false })
-            showAdd -> ItemEditScreen(
-                itemId = null,
-                onDone = { showAdd = false },
-            )
-            else -> HomeScreen(
+        var showAnalysis by remember { mutableStateOf(false) }
+        var selectedTab by remember { mutableStateOf(homeTab) }
+
+        Box(modifier = Modifier.fillMaxSize()) {
+            HomeScreen(
+                selectedTab = selectedTab,
+                onTabSelect = { tab ->
+                    selectedTab = tab
+                    if (tab.label == analysisTab.label) showAnalysis = true
+                },
                 onNew = { showAdd = true },
-                onAnalysis = { /* TODO Step 10 分析页导航 */ },
                 onSetting = { showSettings = true },
             )
+            if (showSettings) {
+                SettingsScreen(onBack = { showSettings = false })
+            }
+            if (showAdd) {
+                ItemEditScreen(
+                    itemId = null,
+                    onDone = { showAdd = false },
+                )
+            }
+            if (showAnalysis) {
+                AnalysisScreen(onBack = {
+                    showAnalysis = false
+                    selectedTab = homeTab
+                })
+            }
         }
     }
 }
