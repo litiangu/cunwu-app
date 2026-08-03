@@ -5,24 +5,55 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-// 数据库定义：包含两张表 items / categories，版本 1。
+// 数据库定义：items / categories / trash 三表。
+// 版本 2：新增 trash（软删除回收站）表，Migration(1,2) 仅建表不清库。
 // @TypeConverters 让全局能用 Converters（枚举 <-> 字符串）。
 @Database(
-    entities = [ItemEntity::class, CategoryEntity::class],
-    version = 1,
+    entities = [ItemEntity::class, CategoryEntity::class, TrashEntity::class],
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class WujiDatabase : RoomDatabase() {
     abstract fun itemDao(): ItemDao
     abstract fun categoryDao(): CategoryDao
+    abstract fun trashDao(): TrashDao
 
     companion object {
         const val DATABASE_NAME = "wuji.db"
+
+        // 版本 1 → 2：仅新建 trash 表，保留既有 items / categories 数据。
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `trash` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `originalId` INTEGER NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `categoryId` INTEGER,
+                        `status` TEXT NOT NULL,
+                        `purchaseDate` INTEGER NOT NULL,
+                        `purchasePrice` REAL NOT NULL,
+                        `extraCost` REAL NOT NULL,
+                        `resaleValue` REAL NOT NULL,
+                        `imagePath` TEXT,
+                        `croppedImagePath` TEXT,
+                        `healthScore` INTEGER,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        `deletedAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
     }
 }
 
@@ -57,7 +88,8 @@ object WujiDatabaseProvider {
                 WujiDatabase::class.java,
                 WujiDatabase.DATABASE_NAME
             )
-                .fallbackToDestructiveMigration(true) // Step2 暂无迁移；版本升级时在此加 Migration（dropAllTables=true 开发期可接受，首次改表会清空数据）
+                .fallbackToDestructiveMigration(true) // 无对应 Migration 时兜底清库（开发期可接受）
+                .addMigrations(WujiDatabase.MIGRATION_1_2) // 1→2 仅建 trash 表，保留旧数据
                 .build()
                 .also { INSTANCE = it }
                 .also {

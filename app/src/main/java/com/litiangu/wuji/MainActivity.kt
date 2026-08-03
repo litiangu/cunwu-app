@@ -58,6 +58,7 @@ fun WujiApp() {
         var showAdd by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
         var showAnalysis by remember { mutableStateOf(false) }
+        var showEdit by remember { mutableStateOf<Long?>(null) }
         var selectedTab by remember { mutableStateOf(homeTab) }
 
         Box(modifier = Modifier.fillMaxSize()) {
@@ -69,6 +70,7 @@ fun WujiApp() {
                 },
                 onNew = { showAdd = true },
                 onSetting = { showSettings = true },
+                onEdit = { showEdit = it },
             )
             if (showSettings) {
                 SettingsScreen(onBack = { showSettings = false })
@@ -77,6 +79,12 @@ fun WujiApp() {
                 ItemEditScreen(
                     itemId = null,
                     onDone = { showAdd = false },
+                )
+            }
+            if (showEdit != null) {
+                ItemEditScreen(
+                    itemId = showEdit,
+                    onDone = { showEdit = null },
                 )
             }
             if (showAnalysis) {

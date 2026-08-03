@@ -6,6 +6,8 @@ import android.content.Context
 import com.litiangu.wuji.data.db.ItemDao
 import com.litiangu.wuji.data.db.CategoryDao
 import com.litiangu.wuji.data.db.ItemStatus
+import com.litiangu.wuji.data.db.TrashDao
+import com.litiangu.wuji.data.db.toTrash
 import com.litiangu.wuji.data.toUiModel
 import com.litiangu.wuji.data.settings.SettingsDataStore
 import kotlinx.coroutines.flow.*
@@ -24,6 +26,7 @@ import kotlinx.coroutines.FlowPreview
 class HomeViewModel(
     private val itemDao: ItemDao,
     private val categoryDao: CategoryDao,
+    private val trashDao: TrashDao,
     private val context: Context
 ) : ViewModel() {
 
@@ -89,6 +92,15 @@ class HomeViewModel(
         viewModelScope.launch {
             val current = settings.privacyModeFlow.first()
             settings.setPrivacyMode(!current)
+        }
+    }
+
+    // 软删除：读原实体 → 快照写入 trash 表 → 从物品表移除（首页/概览/分析自动更新）
+    fun softDelete(item: ItemUiModel) {
+        viewModelScope.launch {
+            val entity = itemDao.getById(item.id) ?: return@launch
+            trashDao.insert(entity.toTrash(System.currentTimeMillis()))
+            itemDao.deleteById(item.id)
         }
     }
 }
