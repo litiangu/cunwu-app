@@ -22,12 +22,14 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.*
@@ -74,11 +76,12 @@ fun HomeScreen(
     onTabSelect: (BottomTab) -> Unit,
     onNew: () -> Unit = {},
     onSetting: () -> Unit = {},
+    onEdit: (Long) -> Unit = {},
 ) {
     val context = LocalContext.current
     val viewModel = remember {
         val db = com.litiangu.wuji.data.db.WujiDatabaseProvider.get(context)
-        HomeViewModel(db.itemDao(), db.categoryDao(), context)
+        HomeViewModel(db.itemDao(), db.categoryDao(), db.trashDao(), context)
     }
     val items by viewModel.items.collectAsStateWithLifecycle(emptyList())
     val categories by viewModel.categories.collectAsStateWithLifecycle(emptyList())
@@ -113,6 +116,13 @@ fun HomeScreen(
     var searchActive by remember { mutableStateOf(false) }
     var showFilter by remember { mutableStateOf(false) }
     var viewMenuOpen by remember { mutableStateOf(false) }
+    // 首页右滑互斥：仅一张卡展开；pendingDelete 挂起待二次确认的删除项
+    var openItemId by remember { mutableStateOf<Long?>(null) }
+    var pendingDelete by remember { mutableStateOf<ItemUiModel?>(null) }
+
+    // 左滑展开互斥：点击「编辑/删除按钮区之外」的任意位置（列表空白区、其它卡片、顶栏、底部栏、筛选 chip）
+    // 都自动收起当前展开的卡片。详见下方各 onClick 接入点。
+    val closeSwipe: () -> Unit = { if (openItemId != null) openItemId = null }
 
     val filterActive = statusFilter.isNotEmpty() || sortKey != "date" || sortOrder != "desc"
 
@@ -167,6 +177,7 @@ fun HomeScreen(
                             icon = Icons.Filled.Close,
                             contentDescription = "取消搜索",
                             onClick = {
+                                openItemId = null
                                 searchActive = false
                                 viewModel.setSearchQuery("")
                             },
@@ -179,7 +190,7 @@ fun HomeScreen(
                         CircleIconButton(
                             icon = Icons.AutoMirrored.Filled.ViewList,
                             contentDescription = "列表切换",
-                            onClick = { viewMenuOpen = true },
+                            onClick = { openItemId = null; viewMenuOpen = true },
                             modifier = Modifier.onGloballyPositioned { coords ->
                                 viewBtnBounds = coords.boundsInWindow()
                             },
@@ -188,13 +199,13 @@ fun HomeScreen(
                         CircleIconButton(
                             icon = Icons.Filled.Search,
                             contentDescription = "搜索",
-                            onClick = { searchActive = true },
+                            onClick = { openItemId = null; searchActive = true },
                         )
                         Spacer(Modifier.width(WujiSpace.sm))
                         CircleIconButton(
                             icon = Icons.Filled.Settings,
                             contentDescription = "设置",
-                            onClick = onSetting,
+                            onClick = { openItemId = null; onSetting() },
                         )
                         Spacer(Modifier.width(WujiSpace.md))
                     }
@@ -208,14 +219,22 @@ fun HomeScreen(
             BottomPillBar(
                 items = tabs,
                 selected = selectedTab,
-                onSelect = onTabSelect,
-                onFabClick = onNew,
+                onSelect = { tab -> openItemId = null; onTabSelect(tab) },
+                onFabClick = { openItemId = null; onNew() },
             )
         },
     ) { padding ->
         val listModifier = Modifier
             .fillMaxSize()
             .padding(padding)
+            // 列表空白区点击：卡片展开时，点空白（非卡片、非按钮）自动收起。
+            // 卡片自身 content clickable 会消费点击，故不会与卡片点击冲突；
+            // 此处仅承接滚动容器内未被子项消费的空白点击。
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = closeSwipe,
+            )
 
         if (viewMode == "list-default") {
             LazyColumn(
@@ -260,11 +279,22 @@ fun HomeScreen(
                     }
                 } else {
                     items(items = displayed, key = { it.id }) { item ->
-                        TimelineRow(
-                            item = item,
-                            onClick = { detailItem = item },
-                            showLine = displayed.size > 1,
-                        )
+                        SwipeableItemCard(
+                            isOpen = openItemId == item.id,
+                            onOpenChange = { open -> openItemId = if (open) item.id else null },
+                            onEdit = { onEdit(item.id) },
+                            onDelete = { pendingDelete = item; openItemId = null },
+                        ) {
+                            TimelineRow(
+                                item = item,
+                                onClick = {
+                                    val wasOpen = openItemId == item.id
+                                    if (openItemId != null) openItemId = null
+                                    if (!wasOpen) detailItem = item
+                                },
+                                showLine = displayed.size > 1,
+                            )
+                        }
                     }
                 }
             }
@@ -280,27 +310,32 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item(span = { GridItemSpan(maxLineSpan) }) { HomeOverview(overview = overview) }
-                item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(WujiSpace.md)) }
+                // 头部整块合成一个跨列 item。LazyVerticalGrid 的 verticalArrangement(12dp)
+                // 作用于「行与行之间」，头部若拆成多个 item 会被额外插入 12dp，
+                // 使分割线到首行卡片的间距大于默认列表。合并后由块内 Spacer 精确控制。
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    CategoryFilterBar(
-                        categories = categories,
-                        selected = selectedColorKey,
-                        onSelect = viewModel::selectColorKey,
-                        onFilter = { showFilter = true },
-                        filterActive = filterActive,
-                    )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        HomeOverview(overview = overview)
+                        Spacer(Modifier.height(WujiSpace.md))
+                        CategoryFilterBar(
+                            categories = categories,
+                            selected = selectedColorKey,
+                            onSelect = { openItemId = null; viewModel.selectColorKey(it) },
+                            onFilter = { openItemId = null; showFilter = true },
+                            filterActive = filterActive,
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp)
+                                .height(1.dp)
+                                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                        )
+                        // 分割线 → 首行卡片目标间距 16dp（与默认列表一致）；
+                        // 行间 verticalArrangement 已提供 12dp，此处补 4dp。
+                        Spacer(Modifier.height(4.dp))
+                    }
                 }
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp)
-                            .height(1.dp)
-                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                    )
-                }
-                item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(16.dp)) }
                 if (displayed.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         HomeEmptyState(
@@ -313,11 +348,41 @@ fun HomeScreen(
                         )
                     }
                 } else {
+                    // 三种视图模式统一使用「左滑露出编辑/删除」，仅按单格面积调整按钮密度：
+                    // 2×2 用 Compact（88dp 纯图标），3×3 用 Mini（64dp 纯图标）。
+                    val swipeDensity = if (viewMode == "card-2x2") {
+                        SwipeActionDensity.Compact
+                    } else {
+                        SwipeActionDensity.Mini
+                    }
                     gridItems(items = displayed, key = { it.id }) { item ->
-                        if (viewMode == "card-2x2") {
-                            ItemGridCard(item = item, onClick = { detailItem = item })
-                        } else {
-                            ItemCompactCell(item = item, onClick = { detailItem = item })
+                        SwipeableItemCard(
+                            isOpen = openItemId == item.id,
+                            onOpenChange = { open -> openItemId = if (open) item.id else null },
+                            onEdit = { onEdit(item.id) },
+                            onDelete = { pendingDelete = item; openItemId = null },
+                            density = swipeDensity,
+                            cornerRadius = if (viewMode == "card-2x2") WujiRadius.xl else WujiRadius.lg,
+                        ) {
+                            if (viewMode == "card-2x2") {
+                                ItemGridCard(
+                                    item = item,
+                                    onClick = {
+                                        val wasOpen = openItemId == item.id
+                                    if (openItemId != null) openItemId = null
+                                    if (!wasOpen) detailItem = item
+                                    },
+                                )
+                            } else {
+                                ItemCompactCell(
+                                    item = item,
+                                    onClick = {
+                                        val wasOpen = openItemId == item.id
+                                    if (openItemId != null) openItemId = null
+                                    if (!wasOpen) detailItem = item
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -327,6 +392,27 @@ fun HomeScreen(
 
     detailItem?.let { item ->
         ItemDetailOverlay(item = item, onDismiss = { detailItem = null })
+    }
+
+    // 删除二次确认（软删除，可在「设置-最近删除」30 天内找回）
+    pendingDelete?.let { item ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除物品？") },
+            text = { Text("删除后可在「设置 - 最近删除」中找回，30 天内可恢复。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.softDelete(item)
+                        pendingDelete = null
+                        openItemId = null
+                    },
+                ) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+            },
+        )
     }
 
     if (showFilter) {
