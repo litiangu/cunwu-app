@@ -57,16 +57,16 @@ abstract class WujiDatabase : RoomDatabase() {
     }
 }
 
-// 7 个预置分类（颜色键对齐 ui.theme.Color.kt 的 CategoryPalette）。
+// 6 个预置分类（颜色键对齐 ui.theme.Tokens.kt 的 CategoryPalette）。
 // 顺序即筛选栏展示顺序；用户自定义分类追加在后。
+// 注：第 7 个「自定义」预置分类已移除（Step 12），改为用户通过「添加个人专属分类」动态创建。
 private val SEED_CATEGORIES = listOf(
     CategoryEntity(name = "数码", colorKey = "digital", isPreset = true, sortOrder = 0),
     CategoryEntity(name = "电器", colorKey = "appliance", isPreset = true, sortOrder = 1),
     CategoryEntity(name = "家具", colorKey = "furniture", isPreset = true, sortOrder = 2),
     CategoryEntity(name = "工具", colorKey = "tool", isPreset = true, sortOrder = 3),
     CategoryEntity(name = "运动", colorKey = "sport", isPreset = true, sortOrder = 4),
-    CategoryEntity(name = "交通", colorKey = "traffic", isPreset = true, sortOrder = 5),
-    CategoryEntity(name = "自定义", colorKey = "custom", isPreset = true, sortOrder = 6)
+    CategoryEntity(name = "交通", colorKey = "traffic", isPreset = true, sortOrder = 5)
 )
 
 // 首次建库后写入预置分类（仅在确实为空时）。

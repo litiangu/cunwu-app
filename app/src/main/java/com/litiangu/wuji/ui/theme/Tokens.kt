@@ -161,7 +161,9 @@ fun tints(): TintPalette = LocalTints.current
 object WujiRadius {
     val lg = 8.dp
     val xl = 16.dp
+    val cardLg = 24.dp       // 分类卡片圆角（Screen 2.0 规格）
     val xxl = 24.dp
+    val md = 12.dp          // 弹窗/按钮圆角（Screen 2.3 规格）
     val pill = 9999.dp
 }
 
