@@ -40,6 +40,7 @@ private val DARK_MODE_KEY = intPreferencesKey("dark_mode")     // 存 DarkModePr
 private val PRIVACY_MODE_KEY = booleanPreferencesKey("privacy_mode")
 private val BUDGET_ANCHOR_KEY = doublePreferencesKey("budget_anchor")
 private val VIEW_MODE_KEY = stringPreferencesKey("view_mode")   // list-default / card-2x2 / list-compact
+private val HAS_LAUNCHED_BEFORE_KEY = booleanPreferencesKey("has_launched_before")  // 首次启动引导标记
 
 // 设置存储：当前持久化深色三档 + 隐私模式开关。
 // 供设置页（Step6）与主题切换复用。
@@ -73,5 +74,14 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun setViewMode(mode: String) {
         context.dataStore.edit { it[VIEW_MODE_KEY] = mode }
+    }
+
+    // 首次启动引导标记：默认 false（首次）。写入 true 后引导页不再展示。
+    // 与深色/隐私等同库，互不影响。
+    val hasLaunchedBeforeFlow: Flow<Boolean> = context.dataStore.data
+        .map { prefs -> prefs[HAS_LAUNCHED_BEFORE_KEY] ?: false }
+
+    suspend fun setHasLaunchedBefore(value: Boolean) {
+        context.dataStore.edit { it[HAS_LAUNCHED_BEFORE_KEY] = value }
     }
 }

@@ -76,6 +76,11 @@ class HomeViewModel(
 
     val categories = categoryDao.observeAll()
 
+    // 数据首读完成标记：items 初始值为 emptyList()，Room 首查返回后置 true。
+    // 首页据此在「数据就绪前」渲染中性背景，避免空状态页 / 零值资产卡闪现（见 HomeScreen）。
+    private val _itemsLoaded = MutableStateFlow(false)
+    val itemsLoaded: StateFlow<Boolean> = _itemsLoaded.asStateFlow()
+
     val items: StateFlow<List<ItemUiModel>> = combine(
         itemDao.observeAll(),
         categoryDao.observeAll(),
@@ -83,6 +88,7 @@ class HomeViewModel(
         val keyById = cats.associate { it.id to it.colorKey }
         entities.map { it.toUiModel().copy(categoryKey = it.categoryId?.let { id -> keyById[id] }) }
     }
+        .onEach { _itemsLoaded.value = true }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val privacyMode = settings.privacyModeFlow

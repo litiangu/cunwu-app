@@ -13,8 +13,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.litiangu.wuji.WujiApplication
+import com.litiangu.wuji.data.db.WujiDatabaseProvider
+import com.litiangu.wuji.ui.home.HomeViewModel
+import com.litiangu.wuji.ui.onboarding.AppSplash
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.data.settings.DarkModePref
@@ -23,8 +28,10 @@ import com.litiangu.wuji.ui.analysis.AnalysisScreen
 import com.litiangu.wuji.ui.designsystem.BottomTab
 import com.litiangu.wuji.ui.home.HomeScreen
 import com.litiangu.wuji.ui.item.ItemEditScreen
+import com.litiangu.wuji.ui.onboarding.OnboardingScreen
 import com.litiangu.wuji.ui.settings.SettingsScreen
 import com.litiangu.wuji.ui.theme.WujiTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,17 +68,58 @@ fun WujiApp() {
         var showEdit by remember { mutableStateOf<Long?>(null) }
         var selectedTab by remember { mutableStateOf(homeTab) }
 
+        // 启动就绪闸门：WujiApplication 预热完成（数据库构建完 + 首启标记读出）后 isReady=true。
+        // 此时 INSTANCE 已建，所有后续 get() 直接返回不阻塞；首启标记同步读出，无首帧 null 白屏。
+        val app = context.applicationContext as WujiApplication
+        val isReady by app.isReady.collectAsStateWithLifecycle(false)
+        val scope = rememberCoroutineScope()
+
+        // 首页 VM 延迟创建：isReady 后 INSTANCE 已建，get() 即时返回，不在主线程阻塞建库。
+        val homeVm = remember(isReady) {
+            if (isReady) {
+                val db = WujiDatabaseProvider.get(context)
+                HomeViewModel(db.itemDao(), db.categoryDao(), db.trashDao(), context)
+            } else null
+        }
+
+        // 点 CTA 后本会话强制进首页，不等 DataStore 异步落盘，消除表单延迟。
+        var forceHome by remember { mutableStateOf(false) }
+
+        val showOnboarding = isReady && !app.launchedBefore && !forceHome
+        val showHome = isReady && homeVm != null && !showOnboarding
+
         Box(modifier = Modifier.fillMaxSize()) {
-            HomeScreen(
-                selectedTab = selectedTab,
-                onTabSelect = { tab ->
-                    selectedTab = tab
-                    if (tab.label == analysisTab.label) showAnalysis = true
-                },
-                onNew = { showAdd = true },
-                onSetting = { showSettings = true },
-                onEdit = { showEdit = it },
-            )
+            if (showHome) {
+                HomeScreen(
+                    viewModel = homeVm!!,
+                    selectedTab = selectedTab,
+                    onTabSelect = { tab ->
+                        selectedTab = tab
+                        if (tab.label == analysisTab.label) showAnalysis = true
+                    },
+                    onNew = { showAdd = true },
+                    onSetting = { showSettings = true },
+                    onEdit = { showEdit = it },
+                )
+            }
+            if (showOnboarding) {
+                OnboardingScreen(
+                    onStart = {
+                        // 立即本地翻转 + 进新增表单；标记后台异步落盘，重启后直接进首页。
+                        // 注：正式 CTA 应跳「分类选择页」并携 source=onboarding（见 Step 12），
+                        // 此处复用现有新增入口(showAdd)，待 Step 12 接管后调整。
+                        forceHome = true
+                        showAdd = true
+                        scope.launch { SettingsDataStore(context).setHasLaunchedBefore(true) }
+                    },
+                )
+            }
+            // 品牌启动页：只覆盖进程预热期（建库 + 读首启标记）。
+            // 首查期由 HomeScreen 内部闸门（复用同款 AppSplash 视觉）承接，
+            // 保证首启/老用户启动页时长一致（都 = 预热），且点 CTA 时 isReady 已 true、启动页不在，表单不被遮盖。
+            if (!isReady) {
+                AppSplash()
+            }
             if (showSettings) {
                 SettingsScreen(onBack = { showSettings = false })
             }
