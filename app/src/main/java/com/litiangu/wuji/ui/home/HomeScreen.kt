@@ -42,7 +42,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -51,6 +50,7 @@ import com.litiangu.wuji.ui.designsystem.BottomPillBar
 import com.litiangu.wuji.ui.designsystem.BottomTab
 import com.litiangu.wuji.ui.designsystem.CircleIconButton
 import com.litiangu.wuji.ui.designsystem.TimelineRow
+import com.litiangu.wuji.ui.onboarding.AppSplash
 import com.litiangu.wuji.ui.theme.BrandOrange
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
@@ -71,6 +71,7 @@ import com.litiangu.wuji.ui.theme.WujiSpace
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
+    viewModel: HomeViewModel,
     modifier: Modifier = Modifier,
     selectedTab: BottomTab,
     onTabSelect: (BottomTab) -> Unit,
@@ -78,12 +79,8 @@ fun HomeScreen(
     onSetting: () -> Unit = {},
     onEdit: (Long) -> Unit = {},
 ) {
-    val context = LocalContext.current
-    val viewModel = remember {
-        val db = com.litiangu.wuji.data.db.WujiDatabaseProvider.get(context)
-        HomeViewModel(db.itemDao(), db.categoryDao(), db.trashDao(), context)
-    }
     val items by viewModel.items.collectAsStateWithLifecycle(emptyList())
+    val itemsLoaded by viewModel.itemsLoaded.collectAsStateWithLifecycle(false)
     val categories by viewModel.categories.collectAsStateWithLifecycle(emptyList())
     val selectedColorKey by viewModel.selectedColorKey.collectAsStateWithLifecycle(null)
     val viewMode by viewModel.viewMode.collectAsStateWithLifecycle("list-default")
@@ -224,6 +221,11 @@ fun HomeScreen(
             )
         },
     ) { padding ->
+        // 数据首读前：复用品牌启动页视觉，避免「空白页→有物品页」闪现，且与进程预热期启动页连续。
+        if (!itemsLoaded) {
+            AppSplash()
+            return@Scaffold
+        }
         val listModifier = Modifier
             .fillMaxSize()
             .padding(padding)

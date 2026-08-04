@@ -2,5 +2,6 @@
 <resources>
     <style name="Theme.Material3.DayNight" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">?attr/colorPrimary</item>
+        <item name="android:windowBackground">@color/window_background</item>
     </style>
 </resources>

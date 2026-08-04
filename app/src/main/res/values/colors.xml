@@ -7,4 +7,6 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <!-- 启动窗口背景：与浅色主题 background(#FAF9F9) 一致，消除冷启动白屏 -->
+    <color name="window_background">#FAF9F9</color>
 </resources>
