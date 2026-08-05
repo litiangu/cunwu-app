@@ -1,6 +1,10 @@
 package com.litiangu.wuji.ui.item
 
-import androidx.compose.animation.AnimatedVisibility
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,12 +26,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -60,6 +69,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -68,6 +79,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.data.db.CategoryEntity
 import com.litiangu.wuji.data.db.ItemStatus
@@ -81,6 +93,7 @@ import com.litiangu.wuji.ui.theme.TintOrangeDark
 import com.litiangu.wuji.ui.theme.TintOrangeLight
 import com.litiangu.wuji.ui.theme.WujiRadius
 import kotlinx.coroutines.launch
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -89,7 +102,11 @@ import java.util.Locale
  * 新增 / 编辑物品表单 [Screen 2.1]。
  * itemId == null 为新增，否则编辑该物品（回显）。
  * initialCategoryId：分类选择页预选的分类 id（Step 13 方案 A）。
- * onDone：保存成功或点 × 关闭时调用，回到首页。
+ * onDone：保存成功或确认放弃后调用，回到首页。
+ *
+ * Step 14 新增：
+ * - 图片上传（Screen 2.5）：顶部占位区点击进入图片选择页（拍照/相册）
+ * - 放弃保护：× 按钮与系统返回手势均做 dirty 检查，脏状态弹确认弹窗
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -125,14 +142,68 @@ fun ItemEditScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var showCustomDialog by remember { mutableStateOf(false) }
 
+    // Step 14：图片上传 overlay 状态
+    var showImageUpload by remember { mutableStateOf(false) }
+    // Step 14：放弃保护弹窗状态
+    var showDiscardDialog by remember { mutableStateOf(false) }
+
+    // 相机拍照临时文件（TakePicture 合约需要预先创建文件并通过 FileProvider 传 URI）
+    var tempCameraFile by remember { mutableStateOf<File?>(null) }
+
     val dateFormat = remember { SimpleDateFormat("yyyy年M月d日", Locale.CHINA) }
+
+    // ====== Step 14：ActivityResultLaunchers（必须在 Composable 顶层声明）======
+
+    // 相册选择：GetContent 返回 content URI → 复制到应用私有目录 → 回填 viewModel
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val path = saveImageFromUri(context, uri)
+            viewModel.onImageChange(path)
+        }
+        // 选完不关闭上传页：留在上传页预览，用户确认后再点「确认」回表单
+    }
+
+    // 相机拍照：TakePicture 写入临时文件 → 复制到应用私有目录 → 回填 viewModel
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success: Boolean ->
+        if (success && tempCameraFile?.exists() == true) {
+            val path = saveImageFromFile(context, tempCameraFile!!)
+            viewModel.onImageChange(path)
+            // 清理临时文件
+            tempCameraFile?.delete()
+            tempCameraFile = null
+        } else {
+            // 拍照取消或失败：清理可能残留的空文件
+            tempCameraFile?.delete()
+            tempCameraFile = null
+        }
+        // 拍完不关闭上传页：留在上传页预览，用户确认后再点「确认」回表单
+    }
+
+    // ====== Step 14：放弃保护统一入口 ======
+    /** 请求关闭表单：脏状态弹确认弹窗，干净状态直接退出 */
+    fun requestClose() {
+        if (viewModel.isDirty) {
+            showDiscardDialog = true
+        } else {
+            onDone()
+        }
+    }
+
+    // 系统返回手势拦截（始终启用；内部根据 isDirty 决定是否弹确认）
+    androidx.activity.compose.BackHandler {
+        requestClose()
+    }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text(title, style = MaterialTheme.typography.headlineSmall) },
                 navigationIcon = {
-                    IconButton(onClick = onDone) {
+                    IconButton(onClick = { requestClose() }) {   // Step 14：走放弃保护
                         Icon(Icons.Filled.Close, contentDescription = "关闭")
                     }
                 },
@@ -144,216 +215,270 @@ fun ItemEditScreen(
             )
         }
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // ===== 顶部图片占位区（Step 14 接 2.5 上传，本步点击 no-op）=====
-            ImagePlaceholder(categoryKey = selectedCategory?.colorKey)
+        Box(modifier = Modifier.fillMaxSize()) {
+            // ====== 表单主体（始终渲染）======
+            Column(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // ===== 顶部图片占位区（Step 14 已接入真实上传流程）=====
+                ImagePlaceholder(
+                    categoryKey = selectedCategory?.colorKey,
+                    imagePath = viewModel.imagePath,
+                    onClick = { showImageUpload = true }
+                )
 
-            // ===== 分类选择区 =====
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // 行一：自定义 + 清除选择
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AssistChip(
-                        onClick = { showCustomDialog = true },
-                        label = { Text("+ 自定义") },
-                        leadingIcon = {
-                            Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
-                        },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = tintOrange,
-                            labelColor = brand,
-                            leadingIconContentColor = brand
-                        )
-                    )
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { viewModel.onCategorySelect(null) }) {
-                        Text("清除选择", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                // 行二：备选分类横向滚动（首帧空，AnimatedVisibility 防两步渲染）
-                AnimatedVisibility(visible = sortedCats.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        sortedCats.forEach { cat ->
-                            FilterChip(
-                                selected = viewModel.categoryId == cat.id,
-                                onClick = { viewModel.onCategorySelect(cat.id) },
-                                label = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(8.dp)
-                                                .background(categoryDotColor(cat.colorKey), CircleShape)
-                                        )
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(cat.name)
-                                    }
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = tintOrange.copy(alpha = 0.15f),
-                                    selectedLabelColor = brand,
-                                    selectedLeadingIconColor = brand
-                                )
+                // ===== 分类选择区 =====
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // 行一：自定义 + 清除选择
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AssistChip(
+                            onClick = { showCustomDialog = true },
+                            label = { Text("+ 自定义") },
+                            leadingIcon = {
+                                Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
+                            },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = tintOrange,
+                                labelColor = brand,
+                                leadingIconContentColor = brand
                             )
-                        }
-                    }
-                }
-            }
-
-            // ===== 表单区：三张独立卡片 =====
-
-            // 卡片 1：物品状态
-            FormCard {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "物品状态",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(Modifier.weight(1f))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        ItemStatus.entries.forEach { status ->
-                            FilterChip(
-                                selected = viewModel.status == status,
-                                onClick = { viewModel.onStatusSelect(status) },
-                                leadingIcon = {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .background(statusDotColor(status), CircleShape)
-                                    )
-                                },
-                                label = { Text(status.label, style = MaterialTheme.typography.bodySmall) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = tintOrange.copy(alpha = 0.15f),
-                                    selectedLabelColor = brand,
-                                    selectedLeadingIconColor = brand
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-
-            // 卡片 2：购买日期 + 名称 + 金额
-            FormCard {
-                Column {
-                    // 购买日期
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "购买日期",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.weight(1f))
-                        OutlinedButton(onClick = { showDatePicker = true }) {
-                            Text(
-                                dateFormat.format(Date(viewModel.purchaseDate)),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+                        TextButton(onClick = { viewModel.onCategorySelect(null) }) {
+                            Text("清除选择", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                        thickness = 1.dp,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
-                    // 输入物品名称（左标签 + 右输入）
-                    LabeledInputRow(
-                        label = "物品名称",
-                        value = viewModel.name,
-                        onValueChange = viewModel::onNameChange,
-                        placeholder = "输入物品名称",
-                        keyboardType = KeyboardType.Text
-                    )
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                        thickness = 1.dp,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
-                    // 物品金额（左标签 + 右输入）
-                    LabeledInputRow(
-                        label = "物品金额",
-                        value = viewModel.purchasePriceText,
-                        onValueChange = viewModel::onPurchasePriceChange,
-                        placeholder = "物品金额",
-                        keyboardType = KeyboardType.Decimal
-                    )
+                    // 行二：备选分类横向滚动（首帧空，AnimatedVisibility 防两步渲染）
+                    AnimatedVisibility(visible = sortedCats.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            sortedCats.forEach { cat ->
+                                FilterChip(
+                                    selected = viewModel.categoryId == cat.id,
+                                    onClick = { viewModel.onCategorySelect(cat.id) },
+                                    label = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .background(categoryDotColor(cat.colorKey), CircleShape)
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(cat.name)
+                                        }
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = tintOrange.copy(alpha = 0.15f),
+                                        selectedLabelColor = brand,
+                                        selectedLeadingIconColor = brand
+                                    )
+                                )
+                            }
+                        }
+                    }
                 }
-            }
 
-            // 卡片 3：附加费用 + 收益金额
-            FormCard {
-                Column {
-                    // 附加费用标题行
+                // ===== 表单区：三张独立卡片 =====
+
+                // 卡片 1：物品状态
+                FormCard {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "附加费用",
+                            "物品状态",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            ItemStatus.entries.forEach { status ->
+                                FilterChip(
+                                    selected = viewModel.status == status,
+                                    onClick = { viewModel.onStatusSelect(status) },
+                                    leadingIcon = {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .background(statusDotColor(status), CircleShape)
+                                        )
+                                    },
+                                    label = { Text(status.label, style = MaterialTheme.typography.bodySmall) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = tintOrange.copy(alpha = 0.15f),
+                                        selectedLabelColor = brand,
+                                        selectedLeadingIconColor = brand
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 卡片 2：购买日期 + 名称 + 金额
+                FormCard {
+                    Column {
+                        // 购买日期
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "购买日期",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.weight(1f))
+                            OutlinedButton(onClick = { showDatePicker = true }) {
+                                Text(
+                                    dateFormat.format(Date(viewModel.purchaseDate)),
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                            thickness = 1.dp,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                        // 输入物品名称（左标签 + 右输入）
+                        LabeledInputRow(
+                            label = "物品名称",
+                            value = viewModel.name,
+                            onValueChange = viewModel::onNameChange,
+                            placeholder = "输入物品名称",
+                            keyboardType = KeyboardType.Text
+                        )
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                            thickness = 1.dp,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                        // 物品金额（左标签 + 右输入）
+                        LabeledInputRow(
+                            label = "物品金额",
+                            value = viewModel.purchasePriceText,
+                            onValueChange = viewModel::onPurchasePriceChange,
+                            placeholder = "物品金额",
+                            keyboardType = KeyboardType.Decimal
+                        )
+                    }
+                }
+
+                // 卡片 3：附加费用 + 收益金额
+                FormCard {
+                    Column {
+                        // 附加费用标题行
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "附加费用",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.weight(1f))
+                            IconButton(
+                                onClick = { },
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Icon(Icons.Filled.AddCircle, null)
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        MoneySubRow(
+                            label = "买配件",
+                            value = viewModel.accessoryCostText,
+                            onValueChange = viewModel::onAccessoryCostChange
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        MoneySubRow(
+                            label = "维修费用",
+                            value = viewModel.repairCostText,
+                            onValueChange = viewModel::onRepairCostChange
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        // 收益金额
+                        Text(
+                            "收益金额",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(Modifier.weight(1f))
-                        IconButton(
-                            onClick = { },
-                            colors = IconButtonDefaults.iconButtonColors(
-                                contentColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Icon(Icons.Filled.AddCircle, null)
-                        }
+                        Spacer(Modifier.height(8.dp))
+                        MoneySubRow(
+                            label = "二手变现",
+                            value = viewModel.resaleValueText,
+                            onValueChange = viewModel::onResaleValueChange
+                        )
                     }
-                    Spacer(Modifier.height(8.dp))
-                    MoneySubRow(
-                        label = "买配件",
-                        value = viewModel.accessoryCostText,
-                        onValueChange = viewModel::onAccessoryCostChange
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    MoneySubRow(
-                        label = "维修费用",
-                        value = viewModel.repairCostText,
-                        onValueChange = viewModel::onRepairCostChange
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    // 收益金额
-                    Text(
-                        "收益金额",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    MoneySubRow(
-                        label = "二手变现",
-                        value = viewModel.resaleValueText,
-                        onValueChange = viewModel::onResaleValueChange
-                    )
+                }
+
+                // 校验错误提示
+                viewModel.errorMessage?.let { msg ->
+                    Text(msg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                 }
             }
 
-            // 校验错误提示
-            viewModel.errorMessage?.let { msg ->
-                Text(msg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            // ====== Step 14：图片上传全屏 overlay（Screen 2.5）======
+            if (showImageUpload) {
+                ImageUploadScreen(
+                    currentImagePath = viewModel.imagePath,
+                    categoryKey = selectedCategory?.colorKey,
+                    onPickCamera = {
+                        // 创建相机临时文件 → 通过 FileProvider 获取 URI → 启动相机
+                        val file = File(context.cacheDir, "temp_camera_${System.currentTimeMillis()}.jpg")
+                        tempCameraFile = file
+                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            file
+                        )
+                        cameraLauncher.launch(uri)
+                    },
+                    onPickGallery = {
+                        galleryLauncher.launch("image/*")
+                    },
+                    onDismiss = { showImageUpload = false }
+                )
+            }
+
+            // ====== Step 14：放弃编辑确认弹窗 ======
+            if (showDiscardDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDiscardDialog = false },
+                    title = { Text("放弃编辑？") },
+                    text = { Text("已修改的内容将不会保存") },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showDiscardDialog = false
+                                onDone()   // 用户确认放弃 → 关闭表单回首页
+                            }
+                        ) {
+                            Text("放弃", color = MaterialTheme.colorScheme.primary)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDiscardDialog = false }) {
+                            Text("取消")
+                        }
+                    }
+                )
             }
         }
     }
@@ -405,6 +530,276 @@ fun ItemEditScreen(
     }
 }
 
+// ============================================================================
+// 以下为 ItemEditScreen 的私有子组件（独立 @Composable 函数）
+// ============================================================================
+
+/**
+ * 顶部图片占位区 / 已选图片展示区。
+ * 有图片时显示圆角图片缩略图；无图时显示分类图标 + 相机角标。
+ * 点击触发 onClick 回调（Step 14 接入 ImageUploadScreen）。
+ */
+@Composable
+private fun ImagePlaceholder(
+    categoryKey: String?,
+    imagePath: String?,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        val bitmap = decodeImagePath(imagePath)
+        Box(
+            modifier = Modifier
+                .size(80.dp)
+                .clip(RoundedCornerShape(WujiRadius.cardLg))
+                .then(
+                    if (bitmap != null) Modifier.background(MaterialTheme.colorScheme.surfaceContainerLowest)
+                    else Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow)
+                )
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
+                    RoundedCornerShape(WujiRadius.cardLg)
+                )
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            if (bitmap != null) {
+                // 已选图片：显示圆角裁剪后的图片
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "物品图片",
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(RoundedCornerShape(WujiRadius.cardLg)),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                )
+            } else {
+                // 未选图片：显示分类图标 + 右下角相机角标
+                Icon(
+                    categoryIcon(categoryKey),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+            // 相机角标（有图/无图都显示，提示可点击更换/添加）
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .align(Alignment.BottomEnd)
+                    .offset((-2).dp, (-2).dp)
+                    .background(BrandOrange, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.AddAPhoto,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Screen 2.5：上传物品图片全屏页面 [参考设计截图 2.5]。
+ *
+ * 结构：
+ * - CenterAlignedTopAppBar：← 返回 + "上传物品图片"
+ * - 预览大区：已选图显示图片，未选显示分类图标 + 提示文字
+ * - 底部两卡片横排：「拍照」（橙色圈+相机图标）+「相册」（灰色圈+相册图标）
+ *
+ * @param currentImagePath 当前已选图片路径（可空）
+ * @param categoryKey 当前分类颜色键（用于未选图时的图标展示）
+ * @param onPickCamera 点击「拍照」回调
+ * @param onPickGallery 点击「相册」回调
+ * @param onDismiss 点击返回 / 遮罩关闭回调
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ImageUploadScreen(
+    currentImagePath: String?,
+    categoryKey: String?,
+    onPickCamera: () -> Unit,
+    onPickGallery: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val tintOrange = if (isDark) TintOrangeDark else TintOrangeLight
+    val brand = if (isDark) BrandOrangeDark else BrandOrange
+
+    // 解码当前已选图片用于预览
+    val previewBitmap = decodeImagePath(currentImagePath)
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)   // 不透明底，防止透出底层表单
+    ) {
+        // 顶栏
+        CenterAlignedTopAppBar(
+            title = { Text("上传物品图片", style = MaterialTheme.typography.headlineSmall) },
+            navigationIcon = {
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+                }
+            }
+        )
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(Modifier.height(16.dp))
+
+            // 预览大区（对齐截图：大圆角矩形容器）
+            Surface(
+                shape = RoundedCornerShape(WujiRadius.cardLg),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(240.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (previewBitmap != null) {
+                        // 已选图片：居中裁剪显示
+                        Image(
+                            bitmap = previewBitmap.asImageBitmap(),
+                            contentDescription = "已选图片预览",
+                            modifier = Modifier.matchParentSize(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                        )
+                    } else {
+                        // 未选：分类图标灰显 + 提示文字
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                categoryIcon(categoryKey),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                "请先上传一张清晰的照片",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(32.dp))
+
+            // 两张选项卡片横排（对齐截图：拍照左 / 相册右）
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // 「拍照」卡片
+                UploadOptionCard(
+                    icon = Icons.Filled.CameraAlt,
+                    label = "拍照",
+                    iconTint = brand,
+                    circleBg = tintOrange.copy(alpha = 0.15f),
+                    onClick = onPickCamera,
+                    modifier = Modifier.weight(1f)
+                )
+                // 「相册」卡片
+                UploadOptionCard(
+                    icon = Icons.Filled.PhotoLibrary,
+                    label = "相册",
+                    iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    circleBg = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    onClick = onPickGallery,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+            // 确认按钮：返回表单（图片已存入 viewModel，表单占位区会显示所选图片）
+            androidx.compose.material3.Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = brand
+                )
+            ) {
+                Text("确认", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+/** 上传方式选项卡片：圆形图标底 + 文字标签。用于拍照/相册两个入口。 */
+@Composable
+private fun UploadOptionCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    iconTint: Color,
+    circleBg: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(WujiRadius.cardLg),
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .shadow(
+                elevation = 2.dp,
+                shape = RoundedCornerShape(WujiRadius.cardLg),
+                ambientColor = Color.Black.copy(alpha = 0.02f),
+                spotColor = Color.Black.copy(alpha = 0.02f)
+            )
+            .border(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                RoundedCornerShape(WujiRadius.cardLg)
+            )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // 图标圆圈
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(circleBg, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            // 标签文字
+            Text(
+                label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
 /** 表单卡片容器：白底圆角 + 软阴影 + 细描边，内边距 16dp。三张表单卡片共用。 */
 @Composable
 private fun FormCard(content: @Composable () -> Unit) {
@@ -426,51 +821,6 @@ private fun FormCard(content: @Composable () -> Unit) {
             )
     ) {
         Column(Modifier.padding(16.dp)) { content() }
-    }
-}
-
-/** 顶部图片占位区：显示当前分类图标（未分类用通用图标），右下角相机角标；点击留待 Step 14。 */
-@Composable
-private fun ImagePlaceholder(categoryKey: String?) {
-    Box(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .size(80.dp)
-                .clip(RoundedCornerShape(WujiRadius.cardLg))
-                .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                .border(
-                    1.dp,
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
-                    RoundedCornerShape(WujiRadius.cardLg)
-                )
-                .clickable { /* Step 14：进入 2.5 上传图片页 */ },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                categoryIcon(categoryKey),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(36.dp)
-            )
-            Box(
-                modifier = Modifier
-                    .size(24.dp)
-                    .align(Alignment.BottomEnd)
-                    .offset((-2).dp, (-2).dp)
-                    .background(BrandOrange, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Filled.AddAPhoto,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(14.dp)
-                )
-            }
-        }
     }
 }
 

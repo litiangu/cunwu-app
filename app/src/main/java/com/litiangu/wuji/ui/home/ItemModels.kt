@@ -16,7 +16,8 @@ data class ItemUiModel(
     val healthScore: Double,
     val companionshipDays: Int,
     val status: ItemStatus,
-    val categoryKey: String? = null
+    val categoryKey: String? = null,
+    val imagePath: String? = null,
 )
 
 data class HomeOverview(

@@ -1,5 +1,6 @@
 package com.litiangu.wuji.ui.designsystem
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,9 +16,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.ui.home.ItemUiModel
+import com.litiangu.wuji.ui.item.decodeImagePath
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSize
 import com.litiangu.wuji.ui.theme.WujiSpace
@@ -59,26 +62,38 @@ fun TimelineRow(
             },
         verticalAlignment = Alignment.Top,
     ) {
-        // 左列：图标圈（40dp，水平居中于 48dp 列）
+        // 左列：图标圈（40dp，水平居中于 48dp 列）；有图时显示实际图片
+        val itemBitmap = decodeImagePath(item.imagePath)
         Box(
             modifier = Modifier
                 .width(48.dp)
                 .height(WujiSize.circleButton),
             contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(WujiSize.circleButton)
-                    .clip(CircleShape)
-                    .background(visual.background),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = visual.icon,
-                    contentDescription = null,
-                    tint = visual.foreground,
-                    modifier = Modifier.size(WujiSize.iconSm),
+            if (itemBitmap != null) {
+                Image(
+                    bitmap = itemBitmap.asImageBitmap(),
+                    contentDescription = item.name,
+                    modifier = Modifier
+                        .size(WujiSize.circleButton)
+                        .clip(CircleShape),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                 )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(WujiSize.circleButton)
+                        .clip(CircleShape)
+                        .background(visual.background),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = visual.icon,
+                        contentDescription = null,
+                        tint = visual.foreground,
+                        modifier = Modifier.size(WujiSize.iconSm),
+                    )
+                }
             }
         }
         Spacer(Modifier.width(WujiSpace.sm))
@@ -116,20 +131,31 @@ fun TimelineRow(
                     .padding(horizontal = 12.dp, vertical = 10.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // logo 占位（图片链路 Step 12，先渲染分类图标占位）
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = visual.icon,
-                            contentDescription = null,
-                            tint = visual.foreground,
-                            modifier = Modifier.size(20.dp),
+                    // logo 位（有图显示实际图片，无图回退分类图标）
+                    if (itemBitmap != null) {
+                        Image(
+                            bitmap = itemBitmap.asImageBitmap(),
+                            contentDescription = item.name,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                         )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = visual.icon,
+                                contentDescription = null,
+                                tint = visual.foreground,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
                     }
                     Spacer(Modifier.width(WujiSpace.md))
                     Column {

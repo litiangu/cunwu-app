@@ -17,6 +17,7 @@ fun ItemEntity.toUiModel(): ItemUiModel = ItemUiModel(
     healthScore = (healthScore ?: 0).toDouble(),
     companionshipDays = frozenCompanionshipDays(purchaseDate),
     status = status,
+    imagePath = croppedImagePath ?: imagePath,
 )
 
 private fun frozenCompanionshipDays(purchaseDate: Long): Int {

@@ -1,5 +1,6 @@
 package com.litiangu.wuji.ui.home
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,10 +19,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.ui.designsystem.categoryVisual
+import com.litiangu.wuji.ui.item.decodeImagePath
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
 import java.text.SimpleDateFormat
@@ -96,7 +100,8 @@ fun ItemDetailOverlay(
                 }
             }
             Spacer(Modifier.height(WujiSpace.md))
-            // 大图位（图片链路 Step 12，先分类图标占位）
+            // 大图位（有图显示实际图片，无图回退分类图标占位）
+            val detailBitmap = decodeImagePath(item.imagePath)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -105,12 +110,21 @@ fun ItemDetailOverlay(
                     .background(MaterialTheme.colorScheme.surfaceContainerLow),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = visual.icon,
-                    contentDescription = null,
-                    tint = visual.foreground,
-                    modifier = Modifier.size(64.dp),
-                )
+                if (detailBitmap != null) {
+                    Image(
+                        bitmap = detailBitmap.asImageBitmap(),
+                        contentDescription = item.name,
+                        modifier = Modifier.matchParentSize(),
+                        contentScale = ContentScale.Fit,
+                    )
+                } else {
+                    Icon(
+                        imageVector = visual.icon,
+                        contentDescription = null,
+                        tint = visual.foreground,
+                        modifier = Modifier.size(64.dp),
+                    )
+                }
             }
             Spacer(Modifier.height(WujiSpace.md))
             Text(
