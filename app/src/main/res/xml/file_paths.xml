@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider 路径配置：允许通过 content URI 共享的目录 -->
+<paths>
+    <!-- 相机拍照临时文件存放于 cacheDir -->
+    <cache-path name="camera_cache" path="." />
+    <!-- 图片正式存放于 filesDir/images（虽然一般不需要通过 FileProvider 共享，但预留） -->
+    <files-path name="images" path="images/" />
+</paths>

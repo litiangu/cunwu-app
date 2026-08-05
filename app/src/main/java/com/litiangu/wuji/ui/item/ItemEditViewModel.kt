@@ -19,12 +19,16 @@ import kotlinx.coroutines.launch
  * 新增 / 编辑物品的表单状态与持久化。
  * itemId == null 表示新增，否则编辑该 id 的物品（init 里回显）。
  * initialCategoryId：分类选择页预选的分类 id（Step 12/13，方案 A：构造参数直接注入）。
+ *
+ * Step 14 新增：
+ * - imagePath：物品图片本地路径（选图后由 ImageUploadScreen 回填）
+ * - baseline / isDirty：脏检测，用于放弃保护（× 按钮 + 系统返回拦截）
  */
 class ItemEditViewModel(
     private val itemDao: ItemDao,
     private val categoryDao: CategoryDao,
     private val itemId: Long?,
-    initialCategoryId: Long? = null,   // Step 13 方案 A：预选分类由构造参数注入，摒弃 LaunchedEffect 副作用
+    initialCategoryId: Long? = null,   // Step 13 方案 A：预选分类由构造参数直接注入
 ) : ViewModel() {
 
     var name by mutableStateOf("")
@@ -45,6 +49,9 @@ class ItemEditViewModel(
         private set
     var resaleValueText by mutableStateOf("")
         private set
+    // Step 14：图片路径（null = 未上传）
+    var imagePath by mutableStateOf<String?>(null)
+        private set
     var errorMessage by mutableStateOf<String?>(null)
         private set
 
@@ -54,8 +61,35 @@ class ItemEditViewModel(
     // 编辑时保留原始 createdAt；新增时用当前时间
     private var originalCreatedAt = System.currentTimeMillis()
 
+    // ====== Step 14：脏检测 baseline ======
+    // 捕获进入表单时的全部可编辑字段快照。isDirty 通过与当前状态比较判断是否有改动。
+    private data class Baseline(
+        val name: String,
+        val categoryId: Long?,
+        val status: ItemStatus,
+        val purchaseDate: Long,
+        val purchasePriceText: String,
+        val accessoryCostText: String,
+        val repairCostText: String,
+        val resaleValueText: String,
+        val imagePath: String?
+    )
+    private var baseline: Baseline? = null
+
+    /** 当前是否处于「脏」状态（相对进入时的基线有改动）。用于放弃保护弹窗触发判断。 */
+    val isDirty: Boolean
+        get() {
+            val b = baseline ?: return false
+            return b != Baseline(
+                name, categoryId, status, purchaseDate,
+                purchasePriceText, accessoryCostText, repairCostText,
+                resaleValueText, imagePath
+            )
+        }
+
     init {
         if (itemId != null) {
+            // 编辑模式：从数据库加载物品数据并回显 + 捕获 baseline
             viewModelScope.launch {
                 itemDao.getById(itemId)?.let { item ->
                     name = item.name
@@ -67,10 +101,25 @@ class ItemEditViewModel(
                     accessoryCostText = formatAmount(item.extraCost)
                     repairCostText = "0.00"
                     resaleValueText = formatAmount(item.resaleValue)
+                    imagePath = item.imagePath   // Step 14：加载已有图片路径
                     originalCreatedAt = item.createdAt
+                    // 编辑模式 baseline 在加载完成后捕获（此时所有字段已赋值）
+                    captureBaseline()
                 }
             }
+        } else {
+            // 新增模式：baseline 立即捕获（初始值即为基线，任意输入即脏）
+            captureBaseline()
         }
+    }
+
+    /** 捕存当前全部字段为 baseline 快照 */
+    private fun captureBaseline() {
+        baseline = Baseline(
+            name, categoryId, status, purchaseDate,
+            purchasePriceText, accessoryCostText, repairCostText,
+            resaleValueText, imagePath
+        )
     }
 
     fun onNameChange(value: String) {
@@ -105,6 +154,11 @@ class ItemEditViewModel(
 
     fun onResaleValueChange(value: String) {
         resaleValueText = value
+    }
+
+    /** Step 14：图片选择完成后的回调，存储图片本地路径 */
+    fun onImageChange(path: String?) {
+        imagePath = path
     }
 
     /** 校验后保存；成功回调 onSaved 返回上一页 */
@@ -147,7 +201,7 @@ class ItemEditViewModel(
                 purchasePrice = price,
                 extraCost = extra,
                 resaleValue = resale,
-                imagePath = null,
+                imagePath = imagePath,          // Step 14：写入图片路径
                 croppedImagePath = null,
                 healthScore = null,
                 createdAt = originalCreatedAt,

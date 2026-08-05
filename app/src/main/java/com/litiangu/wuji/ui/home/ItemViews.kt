@@ -1,5 +1,6 @@
 package com.litiangu.wuji.ui.home
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,9 +15,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.ContentScale
 import com.litiangu.wuji.ui.designsystem.categoryVisual
+import com.litiangu.wuji.ui.item.decodeImagePath
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSize
 import com.litiangu.wuji.ui.theme.WujiSpace
@@ -51,20 +55,32 @@ fun ItemGridCard(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(WujiSpace.sm),
         ) {
-            // 图标圈（分类 tint 底 + 分类色图标）
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(visual.background),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = visual.icon,
-                    contentDescription = null,
-                    tint = visual.foreground,
-                    modifier = Modifier.size(WujiSize.iconSm),
+            // 图标圈（有图显示实际图片，无图回退分类图标）
+            val gridBitmap = decodeImagePath(item.imagePath)
+            if (gridBitmap != null) {
+                Image(
+                    bitmap = gridBitmap.asImageBitmap(),
+                    contentDescription = item.name,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Fit,
                 )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(visual.background),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = visual.icon,
+                        contentDescription = null,
+                        tint = visual.foreground,
+                        modifier = Modifier.size(WujiSize.iconSm),
+                    )
+                }
             }
             Text(
                 text = item.name,
@@ -134,19 +150,32 @@ fun ItemCompactCell(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(visual.background),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = visual.icon,
-                contentDescription = null,
-                tint = visual.foreground,
-                modifier = Modifier.size(20.dp),
+        // 图标圈（有图显示实际图片，无图回退分类图标）
+        val compactBitmap = decodeImagePath(item.imagePath)
+        if (compactBitmap != null) {
+            Image(
+                bitmap = compactBitmap.asImageBitmap(),
+                contentDescription = item.name,
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape),
+                contentScale = ContentScale.Crop,
             )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(visual.background),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = visual.icon,
+                    contentDescription = null,
+                    tint = visual.foreground,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
         Text(
             text = item.name,
