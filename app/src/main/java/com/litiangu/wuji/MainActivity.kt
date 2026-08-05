@@ -206,7 +206,7 @@ fun WujiApp() {
             if (showAdd) {
                 ItemEditScreen(
                     itemId = null,
-                    preselectCategoryId = preselectedCategoryId,   // Step 12: 预选分类
+                    initialCategoryId = preselectedCategoryId,   // Step 13 方案 A：构造参数注入预选分类
                     onDone = {
                         showAdd = false
                         preselectedCategoryId = null             // 清理预选状态
