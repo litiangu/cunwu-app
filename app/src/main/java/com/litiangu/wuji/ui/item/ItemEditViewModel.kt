@@ -18,16 +18,19 @@ import kotlinx.coroutines.launch
 /**
  * 新增 / 编辑物品的表单状态与持久化。
  * itemId == null 表示新增，否则编辑该 id 的物品（init 里回显）。
+ * initialCategoryId：分类选择页预选的分类 id（Step 12/13，方案 A：构造参数直接注入）。
  */
 class ItemEditViewModel(
     private val itemDao: ItemDao,
     private val categoryDao: CategoryDao,
-    private val itemId: Long?
+    private val itemId: Long?,
+    initialCategoryId: Long? = null,   // Step 13 方案 A：预选分类由构造参数注入，摒弃 LaunchedEffect 副作用
 ) : ViewModel() {
 
     var name by mutableStateOf("")
         private set
-    var categoryId by mutableStateOf<Long?>(null)
+    // 新增模式用构造参数预选；编辑模式由下方 init 回显覆盖（调用侧不传此参）
+    var categoryId by mutableStateOf<Long?>(initialCategoryId)
         private set
     var status by mutableStateOf(ItemStatus.IN_USE)
         private set
@@ -35,7 +38,10 @@ class ItemEditViewModel(
         private set
     var purchasePriceText by mutableStateOf("")
         private set
-    var extraCostText by mutableStateOf("")
+    // Step 13：附加费用拆为两个子字段（买配件 / 维修费用），保存时求和写入 extraCost 单列
+    var accessoryCostText by mutableStateOf("")
+        private set
+    var repairCostText by mutableStateOf("")
         private set
     var resaleValueText by mutableStateOf("")
         private set
@@ -57,7 +63,9 @@ class ItemEditViewModel(
                     status = item.status
                     purchaseDate = item.purchaseDate
                     purchasePriceText = formatAmount(item.purchasePrice)
-                    extraCostText = formatAmount(item.extraCost)
+                    // 旧数据无拆分，整体归入「买配件」，维修费用置 0
+                    accessoryCostText = formatAmount(item.extraCost)
+                    repairCostText = "0.00"
                     resaleValueText = formatAmount(item.resaleValue)
                     originalCreatedAt = item.createdAt
                 }
@@ -66,7 +74,7 @@ class ItemEditViewModel(
     }
 
     fun onNameChange(value: String) {
-        name = value
+        name = value.take(50)   // 名称上限 50 字符（逻辑文档 2.3）
         errorMessage = null
     }
 
@@ -87,19 +95,27 @@ class ItemEditViewModel(
         errorMessage = null
     }
 
-    fun onExtraCostChange(value: String) {
-        extraCostText = value
+    fun onAccessoryCostChange(value: String) {
+        accessoryCostText = value
+    }
+
+    fun onRepairCostChange(value: String) {
+        repairCostText = value
     }
 
     fun onResaleValueChange(value: String) {
         resaleValueText = value
     }
 
-    /** 校验（名称非空、购入价为数字）后保存；成功回调 onSaved 返回上一页 */
+    /** 校验后保存；成功回调 onSaved 返回上一页 */
     fun save(onSaved: () -> Unit) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) {
             errorMessage = "名称不能为空"
+            return
+        }
+        if (trimmed.length > 50) {
+            errorMessage = "名称不超过 50 字"
             return
         }
         val price = purchasePriceText.trim().toDoubleOrNull()
@@ -107,7 +123,17 @@ class ItemEditViewModel(
             errorMessage = "购入价需为数字"
             return
         }
-        val extra = extraCostText.trim().toDoubleOrNull() ?: 0.0
+        if (price < 0) {
+            errorMessage = "购入价不能为负"
+            return
+        }
+        if (purchaseDate > System.currentTimeMillis()) {
+            errorMessage = "购买日期不能晚于今天"
+            return
+        }
+        // 附加费用两子字段求和（空串按 0）
+        val extra = (accessoryCostText.trim().toDoubleOrNull() ?: 0.0) +
+                    (repairCostText.trim().toDoubleOrNull() ?: 0.0)
         val resale = resaleValueText.trim().toDoubleOrNull() ?: 0.0
 
         viewModelScope.launch {
