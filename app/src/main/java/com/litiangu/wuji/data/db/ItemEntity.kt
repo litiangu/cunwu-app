@@ -30,6 +30,7 @@ data class ItemEntity(
     val resaleValue: Double = 0.0,  // 二手变现收益
     val imagePath: String? = null,
     val croppedImagePath: String? = null,
+    val imageDisplayMode: Int = 0,    // 图片展示态：0=原图 1=抠图（Step16）
     val healthScore: Int? = null,   // 健康分快照（Step3 填充）
     val createdAt: Long,
     val updatedAt: Long

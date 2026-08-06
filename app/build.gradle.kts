@@ -66,4 +66,7 @@ dependencies {
 
     // Step8 导航
     implementation(libs.androidx.navigation.compose)
+
+    // Step16 智能抠图：ormbg-LiteRT（ISNet 架构，TFLite 模型打包进 assets，Google LiteRT 推理，纯端侧无 GMS 依赖）
+    implementation(libs.litert)
 }

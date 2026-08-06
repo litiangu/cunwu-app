@@ -1,6 +1,7 @@
 package com.litiangu.wuji.ui.item
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.core.net.toFile
@@ -91,6 +92,27 @@ fun decodeImagePath(imagePath: String?): android.graphics.Bitmap? {
     if (imagePath.isNullOrBlank()) return null
     return try {
         BitmapFactory.decodeFile(imagePath)
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    }
+}
+
+/**
+ * Step 16：将抠图得到的透明前景 Bitmap 以 PNG 压缩存入应用私有 images 目录。
+ * 必须用 PNG（JPEG 不支持透明，会填黑/白底毁掉贴纸效果）。
+ *
+ * @param context 上下文
+ * @param bitmap 透明背景前景位图（来自端侧抠图结果）
+ * @return 保存后的本地绝对路径；失败返回 null
+ */
+fun saveCutoutBitmap(context: Context, bitmap: Bitmap): String? {
+    return try {
+        val file = File(getImageDir(context), "${System.currentTimeMillis()}_${(1000..9999).random()}_cutout.png")
+        FileOutputStream(file).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+        file.absolutePath
     } catch (e: Exception) {
         e.printStackTrace()
         null

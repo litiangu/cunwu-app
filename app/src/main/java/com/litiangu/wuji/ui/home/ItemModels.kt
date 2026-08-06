@@ -17,8 +17,17 @@ data class ItemUiModel(
     val companionshipDays: Int,
     val status: ItemStatus,
     val categoryKey: String? = null,
-    val imagePath: String? = null,
-)
+    val imagePath: String? = null,        // 原图路径
+    val croppedImagePath: String? = null, // 抠图透明 PNG 路径（Step16）
+    val imageDisplayMode: Int = 0,       // 0=原图 1=抠图（Step16）
+) {
+    /**
+     * 按展示态选择实际显示的图片路径。
+     * 展示态为抠图且存在抠图结果时优先返回透明 PNG，否则返回原图。
+     */
+    fun displayImagePath(): String? =
+        if (imageDisplayMode == 1 && croppedImagePath != null) croppedImagePath else imagePath
+}
 
 data class HomeOverview(
     val totalPurchase: Double,

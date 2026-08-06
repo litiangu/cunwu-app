@@ -36,6 +36,8 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -226,9 +228,15 @@ fun ItemEditScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // ===== 顶部图片占位区（Step 14 已接入真实上传流程）=====
+                // 按展示态决定占位区显示原图还是抠图贴纸
+                val formDisplayImage = if (viewModel.imageDisplayMode == 1 && viewModel.croppedImagePath != null) {
+                    viewModel.croppedImagePath
+                } else {
+                    viewModel.imagePath
+                }
                 ImagePlaceholder(
                     categoryKey = selectedCategory?.colorKey,
-                    imagePath = viewModel.imagePath,
+                    imagePath = formDisplayImage,
                     onClick = { showImageUpload = true }
                 )
 
@@ -437,7 +445,7 @@ fun ItemEditScreen(
             // ====== Step 14：图片上传全屏 overlay（Screen 2.5）======
             if (showImageUpload) {
                 ImageUploadScreen(
-                    currentImagePath = viewModel.imagePath,
+                    viewModel = viewModel,
                     categoryKey = selectedCategory?.colorKey,
                     onPickCamera = {
                         // 创建相机临时文件 → 通过 FileProvider 获取 URI → 启动相机
@@ -613,7 +621,7 @@ private fun ImagePlaceholder(
  * - 预览大区：已选图显示图片，未选显示分类图标 + 提示文字
  * - 底部两卡片横排：「拍照」（橙色圈+相机图标）+「相册」（灰色圈+相册图标）
  *
- * @param currentImagePath 当前已选图片路径（可空）
+ * @param viewModel 当前物品编辑 ViewModel（读取/写入图片路径与展示态）
  * @param categoryKey 当前分类颜色键（用于未选图时的图标展示）
  * @param onPickCamera 点击「拍照」回调
  * @param onPickGallery 点击「相册」回调
@@ -622,122 +630,338 @@ private fun ImagePlaceholder(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ImageUploadScreen(
-    currentImagePath: String?,
+    viewModel: ItemEditViewModel,
     categoryKey: String?,
     onPickCamera: () -> Unit,
     onPickGallery: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val tintOrange = if (isDark) TintOrangeDark else TintOrangeLight
     val brand = if (isDark) BrandOrangeDark else BrandOrange
 
-    // 解码当前已选图片用于预览
-    val previewBitmap = decodeImagePath(currentImagePath)
+    // Step 16：抠图相关本地状态
+    var processing by remember { mutableStateOf(false) }
+    // 已存在抠图则直接进入对比态；首次抠图成功后展开
+    var compareMode by remember { mutableStateOf(viewModel.croppedImagePath != null) }
+    var viewCutout by remember { mutableStateOf(viewModel.imageDisplayMode == 1) }
+
+    val hasImage = viewModel.imagePath != null
+    val hasCutout = viewModel.croppedImagePath != null
+
+    // 预览路径：对比态且选择「抠图」时显示透明 PNG，否则显示原图
+    val previewPath = if (compareMode && viewCutout && hasCutout) {
+        viewModel.croppedImagePath
+    } else {
+        viewModel.imagePath
+    }
+    val previewBitmap = decodeImagePath(previewPath)
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)   // 不透明底，防止透出底层表单
     ) {
-        // 顶栏
+        // 顶栏（对齐截图：标题 + X关闭 + 右上角保存）
         CenterAlignedTopAppBar(
-            title = { Text("上传物品图片", style = MaterialTheme.typography.headlineSmall) },
+            title = { Text("编辑家具物品", style = MaterialTheme.typography.headlineSmall) },
             navigationIcon = {
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+                    Icon(Icons.Filled.Close, contentDescription = "关闭")
+                }
+            },
+            actions = {
+                // 右上角「保存」：保存当前图片/抠图选择并退出回表单
+                TextButton(onClick = onDismiss) {
+                    Text("保存", color = brand, fontWeight = FontWeight.Bold)
                 }
             }
         )
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Spacer(Modifier.height(16.dp))
-
-            // 预览大区（对齐截图：大圆角矩形容器）
-            Surface(
-                shape = RoundedCornerShape(WujiRadius.cardLg),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
+        Box(modifier = Modifier.weight(1f)) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(240.dp)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    if (previewBitmap != null) {
-                        // 已选图片：居中裁剪显示
-                        Image(
-                            bitmap = previewBitmap.asImageBitmap(),
-                            contentDescription = "已选图片预览",
-                            modifier = Modifier.matchParentSize(),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Fit
-                        )
-                    } else {
-                        // 未选：分类图标灰显 + 提示文字
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                categoryIcon(categoryKey),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
-                                modifier = Modifier.size(48.dp)
+                Spacer(Modifier.height(16.dp))
+
+                // 预览大区（对齐截图：大圆角矩形容器）
+                // 抠图预览态用棋盘格底色凸显透明区域；原图态保持 surfaceContainerLow
+                val previewBg = if (compareMode && viewCutout && hasCutout)
+                    Color(0xFFE0E0E0) // 中灰底（透明区可见，白边/阴影可辨）
+                else
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                Surface(
+                    shape = RoundedCornerShape(WujiRadius.cardLg),
+                    color = previewBg,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        if (previewBitmap != null) {
+                            // 已选图片：完整显示（透明 PNG 透出容器底，呈贴纸效果）
+                            Image(
+                                bitmap = previewBitmap.asImageBitmap(),
+                                contentDescription = "图片预览",
+                                modifier = Modifier.matchParentSize(),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Fit
                             )
-                            Spacer(Modifier.height(12.dp))
-                            Text(
-                                "请先上传一张清晰的照片",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            )
+                        } else {
+                            // 未选：分类图标灰显 + 提示文字
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    categoryIcon(categoryKey),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    "请先上传一张清晰的照片",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                            }
                         }
                     }
                 }
+
+                Spacer(Modifier.height(32.dp))
+
+                // 两张选项卡片横排（对齐截图：拍照左 / 相册右）
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    UploadOptionCard(
+                        icon = Icons.Filled.CameraAlt,
+                        label = "拍照",
+                        iconTint = brand,
+                        circleBg = tintOrange.copy(alpha = 0.15f),
+                        onClick = onPickCamera,
+                        modifier = Modifier.weight(1f)
+                    )
+                    UploadOptionCard(
+                        icon = Icons.Filled.PhotoLibrary,
+                        label = "相册",
+                        iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        circleBg = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        onClick = onPickGallery,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                // Step 16：智能抠图入口（有图且尚未进入对比态时显示）
+                if (hasImage && !processing && !compareMode) {
+                    Spacer(Modifier.height(16.dp))
+                    CutoutEntryCard(
+                        onClick = {
+                            viewModel.clearCutoutError()
+                            processing = true
+                            viewModel.runCutout(context) { ok ->
+                                processing = false
+                                if (ok) {
+                                    compareMode = true
+                                    viewCutout = true
+                                }
+                                // 失败时 viewModel.cutoutError 已被设置（含异常详情）
+                            }
+                        }
+                    )
+                }
+
+                // Step 16：抠图对比控制（已生成抠图时显示）
+                if (compareMode && hasCutout && !processing) {
+                    Spacer(Modifier.height(16.dp))
+                    // 原图 / 抠图 胶囊切换
+                    Row(
+                        modifier = Modifier
+                            .background(
+                                MaterialTheme.colorScheme.surfaceContainerHigh,
+                                RoundedCornerShape(999.dp)
+                            )
+                            .padding(4.dp)
+                    ) {
+                        SegmentedToggle(
+                            selected = !viewCutout,
+                            text = "原图",
+                            onClick = { viewCutout = false },
+                            modifier = Modifier.weight(1f)
+                        )
+                        SegmentedToggle(
+                            selected = viewCutout,
+                            text = "抠图",
+                            onClick = { viewCutout = true },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    // 保留原图 / 使用抠图
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        androidx.compose.material3.Button(
+                            onClick = {
+                                viewModel.onKeepOriginal()
+                                compareMode = false
+                                viewCutout = false
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = MaterialTheme.colorScheme.onSurface
+                            )
+                        ) { Text("保留原图", fontWeight = FontWeight.Bold) }
+                        androidx.compose.material3.Button(
+                            onClick = {
+                                viewModel.onUseCutout()
+                                compareMode = false
+                                viewCutout = true
+                            },
+                            modifier = Modifier.weight(2f),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = brand
+                            )
+                        ) { Text("使用抠图", color = Color.White, fontWeight = FontWeight.Bold) }
+                    }
+                }
+
+                // 抠图失败提示（含具体异常信息，便于排查）
+                viewModel.cutoutError?.let {
+                    Spacer(Modifier.height(12.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                }
+
+                Spacer(Modifier.height(24.dp))
+                // 确认按钮：确认当前图片/抠图选择（不退出，留在当前页）
+                // 有抠图结果时自动设为「使用抠图」模式；点击右上角「保存」才退出回表单
+                androidx.compose.material3.Button(
+                    onClick = {
+                        // 有抠图结果时，确认即代表选用抠图
+                        if (hasCutout) {
+                            viewModel.onUseCutout()
+                            viewCutout = true
+                        }
+                        // 不调用 onDismiss，留在当前页供用户继续调整或点保存退出
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = brand
+                    )
+                ) {
+                    Text("确认", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(16.dp))
             }
 
-            Spacer(Modifier.height(32.dp))
-
-            // 两张选项卡片横排（对齐截图：拍照左 / 相册右）
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // 「拍照」卡片
-                UploadOptionCard(
-                    icon = Icons.Filled.CameraAlt,
-                    label = "拍照",
-                    iconTint = brand,
-                    circleBg = tintOrange.copy(alpha = 0.15f),
-                    onClick = onPickCamera,
-                    modifier = Modifier.weight(1f)
-                )
-                // 「相册」卡片
-                UploadOptionCard(
-                    icon = Icons.Filled.PhotoLibrary,
-                    label = "相册",
-                    iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    circleBg = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    onClick = onPickGallery,
-                    modifier = Modifier.weight(1f)
-                )
+            // Step 16：处理中遮罩（正在智能抠图...）
+            if (processing) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        androidx.compose.material3.CircularProgressIndicator(color = brand)
+                        Spacer(Modifier.height(12.dp))
+                        Text("正在智能抠图...", color = brand, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
-
-            Spacer(Modifier.height(24.dp))
-            // 确认按钮：返回表单（图片已存入 viewModel，表单占位区会显示所选图片）
-            androidx.compose.material3.Button(
-                onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth(),
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                    containerColor = brand
-                )
-            ) {
-                Text("确认", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(16.dp))
         }
+    }
+}
+
+/** Step 16：智能抠图入口卡片（auto_fix_high 图标 + 文案）。 */
+@Composable
+private fun CutoutEntryCard(onClick: () -> Unit) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val brand = if (isDark) BrandOrangeDark else BrandOrange
+    Surface(
+        shape = RoundedCornerShape(WujiRadius.cardLg),
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .border(1.dp, brand.copy(alpha = 0.15f), RoundedCornerShape(WujiRadius.cardLg))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(brand, RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.AutoFixHigh,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "智能抠图",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = brand
+                )
+                Text(
+                    "AI 自动去除背景，生成高清商品图",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = brand.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
+
+/** Step 16：原图 / 抠图 分段切换按钮。 */
+@Composable
+private fun SegmentedToggle(
+    selected: Boolean,
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val brand = if (isDark) BrandOrangeDark else BrandOrange
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(
+                if (selected) MaterialTheme.colorScheme.surfaceContainerLowest
+                else Color.Transparent
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text,
+            fontWeight = FontWeight.Bold,
+            color = if (selected) brand else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

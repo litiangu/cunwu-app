@@ -4,8 +4,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import android.content.Context
 import androidx.lifecycle.viewModelScope
 import com.litiangu.wuji.data.db.CategoryDao
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.litiangu.wuji.data.db.CategoryEntity
 import com.litiangu.wuji.data.db.ItemDao
 import com.litiangu.wuji.data.db.ItemEntity
@@ -52,6 +55,16 @@ class ItemEditViewModel(
     // Step 14：图片路径（null = 未上传）
     var imagePath by mutableStateOf<String?>(null)
         private set
+    // Step 16：抠图结果（透明 PNG 路径）；imagePath 原图始终保留
+    var croppedImagePath by mutableStateOf<String?>(null)
+        private set
+    // Step 16：展示态 0=原图 1=抠图
+    var imageDisplayMode by mutableStateOf(0)
+        private set
+    var cutoutError by mutableStateOf<String?>(null)  // Step16：抠图失败详情（含异常信息）
+
+    /** 清除抠图错误状态（重试前调用） */
+    fun clearCutoutError() { cutoutError = null }
     var errorMessage by mutableStateOf<String?>(null)
         private set
 
@@ -72,7 +85,9 @@ class ItemEditViewModel(
         val accessoryCostText: String,
         val repairCostText: String,
         val resaleValueText: String,
-        val imagePath: String?
+        val imagePath: String?,
+        val croppedImagePath: String?,
+        val imageDisplayMode: Int
     )
     private var baseline: Baseline? = null
 
@@ -83,7 +98,8 @@ class ItemEditViewModel(
             return b != Baseline(
                 name, categoryId, status, purchaseDate,
                 purchasePriceText, accessoryCostText, repairCostText,
-                resaleValueText, imagePath
+                resaleValueText, imagePath,
+                croppedImagePath, imageDisplayMode
             )
         }
 
@@ -102,6 +118,8 @@ class ItemEditViewModel(
                     repairCostText = "0.00"
                     resaleValueText = formatAmount(item.resaleValue)
                     imagePath = item.imagePath   // Step 14：加载已有图片路径
+                    croppedImagePath = item.croppedImagePath // Step 16：加载已有抠图
+                    imageDisplayMode = item.imageDisplayMode // Step 16：加载展示态
                     originalCreatedAt = item.createdAt
                     // 编辑模式 baseline 在加载完成后捕获（此时所有字段已赋值）
                     captureBaseline()
@@ -118,7 +136,8 @@ class ItemEditViewModel(
         baseline = Baseline(
             name, categoryId, status, purchaseDate,
             purchasePriceText, accessoryCostText, repairCostText,
-            resaleValueText, imagePath
+            resaleValueText, imagePath,
+            croppedImagePath, imageDisplayMode
         )
     }
 
@@ -156,9 +175,57 @@ class ItemEditViewModel(
         resaleValueText = value
     }
 
-    /** Step 14：图片选择完成后的回调，存储图片本地路径 */
+    /** Step 14：图片选择完成后的回调，存储图片本地路径。重选原图时清空已有抠图结果。 */
     fun onImageChange(path: String?) {
         imagePath = path
+        croppedImagePath = null
+        imageDisplayMode = 0
+    }
+
+    // ====== Step 16：智能抠图相关 ======
+
+    /** 抠图成功：写入透明 PNG 路径，原图 imagePath 保持不变 */
+    fun onCutoutDone(croppedPath: String) {
+        croppedImagePath = croppedPath
+    }
+
+    /** 用户选择「使用抠图」：展示态置为抠图 */
+    fun onUseCutout() {
+        imageDisplayMode = 1
+    }
+
+    /** 用户选择「保留原图」：展示态回退原图（抠图结果仍保留，便于再次切换） */
+    fun onKeepOriginal() {
+        imageDisplayMode = 0
+    }
+
+    /**
+     * 触发端侧抠图：解码原图 → ormbg-LiteRT（ISNet）高质量去背 + 贴纸化后处理（白边+阴影）→ 存透明 PNG。
+     * 在 viewModelScope + Dispatchers.Default 执行重算法，结果回主线程写状态。
+     * @param onDone 回调：true=成功生成抠图，false=失败（模型缺失 / 无清晰主体）
+     */
+    fun runCutout(context: Context, onDone: (Boolean) -> Unit) {
+        val originalPath = imagePath ?: run { onDone(false); return }
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                val original = decodeImagePath(originalPath)
+                    ?: throw IllegalStateException("无法解码原图")
+                val sticker = SmartCutoutEngine.segmentSubject(context, original)
+                val saved = saveCutoutBitmap(context, sticker)
+                    ?: throw IllegalStateException("保存抠图失败")
+                withContext(Dispatchers.Main) {
+                    onCutoutDone(saved)
+                    onDone(true)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                val msg = "智能抠图失败: ${e.message}"
+                withContext(Dispatchers.Main) {
+                    cutoutError = msg
+                    onDone(false)
+                }
+            }
+        }
     }
 
     /** 校验后保存；成功回调 onSaved 返回上一页 */
@@ -202,7 +269,8 @@ class ItemEditViewModel(
                 extraCost = extra,
                 resaleValue = resale,
                 imagePath = imagePath,          // Step 14：写入图片路径
-                croppedImagePath = null,
+                croppedImagePath = croppedImagePath, // Step 16：写入抠图结果
+                imageDisplayMode = imageDisplayMode, // Step 16：写入展示态
                 healthScore = null,
                 createdAt = originalCreatedAt,
                 updatedAt = now

@@ -12,11 +12,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 // 数据库定义：items / categories / trash 三表。
-// 版本 2：新增 trash（软删除回收站）表，Migration(1,2) 仅建表不清库。
+// 版本 3：在 v2 基础上为 items 新增 imageDisplayMode 列（展示态），Migration(2,3) 仅加列不清库。
 // @TypeConverters 让全局能用 Converters（枚举 <-> 字符串）。
 @Database(
     entities = [ItemEntity::class, CategoryEntity::class, TrashEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -51,6 +51,15 @@ abstract class WujiDatabase : RoomDatabase() {
                         `deletedAt` INTEGER NOT NULL
                     )
                     """.trimIndent()
+                )
+            }
+        }
+
+        // 版本 2 → 3：items 表新增 imageDisplayMode 列（展示态，默认 0=原图），保留既有数据。
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE items ADD COLUMN imageDisplayMode INTEGER NOT NULL DEFAULT 0"
                 )
             }
         }
@@ -90,6 +99,7 @@ object WujiDatabaseProvider {
             )
                 .fallbackToDestructiveMigration(true) // 无对应 Migration 时兜底清库（开发期可接受）
                 .addMigrations(WujiDatabase.MIGRATION_1_2) // 1→2 仅建 trash 表，保留旧数据
+                .addMigrations(WujiDatabase.MIGRATION_2_3) // 2→3 加 imageDisplayMode 列，保留旧数据
                 .build()
                 .also { INSTANCE = it }
                 .also {

@@ -56,7 +56,7 @@ fun ItemGridCard(
             verticalArrangement = Arrangement.spacedBy(WujiSpace.sm),
         ) {
             // 图标圈（有图显示实际图片，无图回退分类图标）
-            val gridBitmap = decodeImagePath(item.imagePath)
+            val gridBitmap = decodeImagePath(item.displayImagePath())
             if (gridBitmap != null) {
                 Image(
                     bitmap = gridBitmap.asImageBitmap(),
@@ -151,7 +151,7 @@ fun ItemCompactCell(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         // 图标圈（有图显示实际图片，无图回退分类图标）
-        val compactBitmap = decodeImagePath(item.imagePath)
+        val compactBitmap = decodeImagePath(item.displayImagePath())
         if (compactBitmap != null) {
             Image(
                 bitmap = compactBitmap.asImageBitmap(),

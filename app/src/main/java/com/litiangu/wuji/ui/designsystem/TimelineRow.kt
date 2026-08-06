@@ -63,7 +63,7 @@ fun TimelineRow(
         verticalAlignment = Alignment.Top,
     ) {
         // 左列：图标圈（40dp，水平居中于 48dp 列）；有图时显示实际图片
-        val itemBitmap = decodeImagePath(item.imagePath)
+        val itemBitmap = decodeImagePath(item.displayImagePath())
         Box(
             modifier = Modifier
                 .width(48.dp)

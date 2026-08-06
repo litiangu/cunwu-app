@@ -101,7 +101,7 @@ fun ItemDetailOverlay(
             }
             Spacer(Modifier.height(WujiSpace.md))
             // 大图位（有图显示实际图片，无图回退分类图标占位）
-            val detailBitmap = decodeImagePath(item.imagePath)
+            val detailBitmap = decodeImagePath(item.displayImagePath())
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
