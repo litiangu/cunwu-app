@@ -6,48 +6,63 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Anchor
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.MonetizationOn
-import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsBrightness
-import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.data.settings.DarkModePref
 import com.litiangu.wuji.data.settings.SettingsDataStore
+import com.litiangu.wuji.ui.theme.WujiRadius
+import com.litiangu.wuji.ui.theme.WujiSpace
 import kotlinx.coroutines.launch
 
 /**
  * 设置主页（对齐 `stitch_app_settings_page_redesign/5.0设置页面/screen.png`）。
  *
- * 顶栏 ← 返回 / 中间「设置」；
- * 滚动内容：用户信息卡 + 「偏好/管理/数据与账户/关于」四组白底卡，
- * 每行 = 40dp 圆形图标圈（浅橙 tint #FFF5F0 底 + 灰色图标）+ 标题 + 右侧控件（Switch / chevron）。
+ * 结构骨架：
+ * - TopAppBar：左返回 + 中标题 + 右装饰圆钮（默认走 status bar inset，不贴顶）
+ * - 资料区：80dp 头像 + 昵称 + 副标（无卡底）
+ * - 4 组卡：偏好 / 管理 / 数据与账户 / 关于
+ *   每行 = IconCircle(40dp, 浅灰) + 标题(weight=1) + 右侧控件
+ *   行高 72dp，水平 padding 16dp，分隔线缩进(72dp 起)
+ *
+ * 字体规格严格按 `DESIGN.md` 的 typography：
+ *   - 顶栏标题 = headline-lg   (Manrope 24sp / 600)
+ *   - 资料区昵称 = headline-md (Manrope 20sp / 600)
+ *   - 资料区副标 = body-md     (Manrope 14sp / 400)
+ *   - 分组小标题 = label-caps  (Manrope 12sp / 700 / 0.05em)
+ *   - 行内标题   = body-lg     (Manrope 16sp / 500)
+ *
+ * 偏离 5.0 的有意识裁决：
+ * 1. 「深色模式」保留三档分段（防退化 Step 11 已落地架构 `SettingsDataStore.darkModeFlow`）。
+ * 2. 「预算锚点」改为箭头行，编辑权移交 Step 20 独立子页（保留 `SettingsViewModel.saveBudgetAnchor` API）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,21 +72,54 @@ fun SettingsScreen(onBack: () -> Unit = {}) {
     val viewModel = remember { SettingsViewModel(settings) }
     val darkMode by viewModel.darkMode.collectAsStateWithLifecycle()
     val privacyMode by viewModel.privacyMode.collectAsStateWithLifecycle()
-    val budgetAnchor by viewModel.budgetAnchor.collectAsStateWithLifecycle()
-    var budgetText by remember(budgetAnchor) { mutableStateOf(formatAmount(budgetAnchor)) }
     val scope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text("设置", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
+            // Material3 TopAppBar 默认按 status bar inset 留出顶部空间；
+            // 不显式覆盖 windowInsets，避免画面贴顶与状态栏重叠。
+            CenterAlignedTopAppBar(
+                title = {
+                    // headline-lg：Manrope 24sp / 600（DESIGN.md typography.headline-lg）
+                    Text(
+                        text = "设置",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                actions = {
+                    // 装饰性 Settings 圆钮：40dp 灰圆 + 齿轮图标，与左侧返回钮左右均衡；纯装饰不参与交互。
+                    Box(
+                        modifier = Modifier
+                            .padding(end = WujiSpace.sm)
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceContainer),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.background,
+                ),
             )
         },
     ) { padding ->
@@ -80,17 +128,14 @@ fun SettingsScreen(onBack: () -> Unit = {}) {
                 .padding(padding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = 20.dp),
         ) {
-            // 用户信息卡
-            UserInfoCard()
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(WujiSpace.sm))
+            ProfileSection(onEdit = { /* TODO Step 25：进入用户信息编辑子页 */ })
 
-            // 偏好
+            Spacer(Modifier.height(WujiSpace.md))
             SectionLabel("偏好")
             CardGroup {
-                // 深色模式：三档（跟随系统/浅色/深色）
                 SettingRow(
                     icon = Icons.Filled.SettingsBrightness,
                     title = "深色模式",
@@ -101,114 +146,106 @@ fun SettingsScreen(onBack: () -> Unit = {}) {
                         )
                     },
                 )
-                Divider1px()
-                // 隐私模式
+                RowDivider()
                 SettingRow(
-                    icon = if (privacyMode) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                    icon = Icons.Filled.VisibilityOff,
                     title = "隐私模式",
                     trailing = {
-                        Switch(checked = privacyMode, onCheckedChange = { viewModel.setPrivacyMode(it) })
+                        Switch(
+                            checked = privacyMode,
+                            onCheckedChange = { viewModel.setPrivacyMode(it) },
+                        )
                     },
                 )
-                Divider1px()
-                // 震动反馈（占位，Step 10 实现）
+                RowDivider()
                 SettingRow(
-                    icon = Icons.Filled.NotificationsActive,
+                    icon = Icons.Filled.Vibration,
                     title = "震动反馈",
-                    trailing = { Switch(checked = false, onCheckedChange = {}) },
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-
-            // 管理
-            SectionLabel("管理")
-            CardGroup {
-                SettingRow(
-                    icon = Icons.Filled.History,
-                    title = "最近删除",
-                    trailing = { Chevron() },
-                    onClick = { /* TODO Step 13 */ },
-                )
-                Divider1px()
-                // 预算锚点（Step 1-8 内嵌编辑）
-                SettingRow(
-                    icon = Icons.Filled.MonetizationOn,
-                    title = "预算锚点",
                     trailing = {
-                        OutlinedTextField(
-                            value = budgetText,
-                            onValueChange = { budgetText = it.filter { c -> c.isDigit() || c == '.' } },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            modifier = Modifier.width(120.dp),
-                            singleLine = true,
-                            trailingIcon = {
-                                TextButton(onClick = {
-                                    val v = budgetText.toDoubleOrNull()
-                                    if (v != null) scope.launch { viewModel.saveBudgetAnchor(v) }
-                                }) { Text("保存") }
-                            },
+                        Switch(
+                            checked = false,
+                            onCheckedChange = { /* TODO Step 20：接入 Vibrator */ },
                         )
                     },
                 )
             }
-            Spacer(Modifier.height(8.dp))
 
-            // 数据与账户
+            Spacer(Modifier.height(WujiSpace.md))
+            SectionLabel("管理")
+            CardGroup {
+                SettingRow(
+                    icon = Icons.Filled.DeleteOutline,
+                    title = "最近删除",
+                    trailing = { Chevron() },
+                    onClick = { /* TODO Step 21：跳转最近删除页 */ },
+                )
+                RowDivider()
+                SettingRow(
+                    icon = Icons.Filled.Anchor,
+                    title = "预算锚点",
+                    trailing = { Chevron() },
+                    onClick = { /* TODO Step 20：跳转预算锚点编辑子页 */ },
+                )
+            }
+
+            Spacer(Modifier.height(WujiSpace.md))
             SectionLabel("数据与账户")
             CardGroup {
                 SettingRow(
                     icon = Icons.Filled.CloudUpload,
                     title = "数据备份",
                     trailing = { Chevron() },
-                    onClick = { /* TODO Step 14 */ },
+                    onClick = { /* TODO Step 22：跳转数据备份页 */ },
                 )
             }
-            Spacer(Modifier.height(8.dp))
 
-            // 关于
+            Spacer(Modifier.height(WujiSpace.md))
             SectionLabel("关于")
             CardGroup {
                 SettingRow(
                     icon = Icons.Filled.Info,
-                    title = "关于我们",
+                    title = "关于本应用",
                     trailing = { Chevron() },
-                    onClick = { /* TODO Step 15 */ },
+                    onClick = { /* TODO Step 23：跳转关于页 */ },
                 )
             }
-            Spacer(Modifier.height(24.dp))
+
+            Spacer(Modifier.height(WujiSpace.xl))
+            Spacer(Modifier.height(WujiSpace.xl))
         }
     }
 }
 
+/** 资料区：80dp 灰圆头像 + 灰色人形 + 右下橙色编辑角标 + 大字昵称 + 小字副标。 */
 @Composable
-private fun UserInfoCard() {
+private fun ProfileSection(onEdit: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .clickable { /* TODO 用户信息编辑 */ }
-            .padding(16.dp),
+            .clickable(onClick = onEdit)
+            .padding(vertical = WujiSpace.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerLow),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Filled.AccountCircle,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(40.dp),
-            )
-            // 铅笔编辑角标（橙底）
+        Box(modifier = Modifier.size(80.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.AccountCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(56.dp),
+                )
+            }
+            // 右下角橙色编辑角标（叠在头像上）
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .size(20.dp)
+                    .size(24.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary),
                 contentAlignment = Alignment.Center,
@@ -217,47 +254,64 @@ private fun UserInfoCard() {
                     Icons.Filled.Edit,
                     contentDescription = "编辑",
                     tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(12.dp),
+                    modifier = Modifier.size(14.dp),
                 )
             }
         }
-        Spacer(Modifier.width(16.dp))
+        Spacer(Modifier.width(WujiSpace.md))
         Column(modifier = Modifier.weight(1f)) {
+            // headline-md：Manrope 20sp / 600（DESIGN.md typography.headline-md）
             Text(
                 text = "本地用户",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
             )
+            Spacer(Modifier.height(WujiSpace.xs))
+            // body-md：Manrope 14sp / 400（DESIGN.md typography.body-md）
             Text(
-                text = "未命名",
-                style = MaterialTheme.typography.bodySmall,
+                text = "点击编辑昵称",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Normal,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
 }
 
+/** 分组小标题：label-caps（Manrope 12sp / 700 / 0.05em letterSpacing / 灰）。 */
 @Composable
 private fun SectionLabel(text: String) {
     Text(
         text = text,
-        style = MaterialTheme.typography.labelMedium,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.05.em,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp),
+        modifier = Modifier.padding(start = 4.dp, top = WujiSpace.xs, bottom = WujiSpace.xs),
     )
 }
 
+/** 分组卡：白底 + 极轻软阴影（1dp / clip=false）+ 24dp 圆角；用 Surface 容器更稳。 */
 @Composable
-private fun CardGroup(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
-    Column(
+private fun CardGroup(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(MaterialTheme.colorScheme.surface),
-        content = content,
-    )
+            .shadow(
+                elevation = 1.dp,
+                shape = RoundedCornerShape(WujiRadius.cardLg),
+                clip = false,
+            ),
+        shape = RoundedCornerShape(WujiRadius.cardLg),
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        tonalElevation = 0.dp,
+    ) {
+        Column(content = content)
+    }
 }
 
+/** 单行：IconCircle(40dp) + 标题(weight=1) + 右侧控件；可点击行整行 ripple。 */
 @Composable
 private fun SettingRow(
     icon: ImageVector,
@@ -265,47 +319,73 @@ private fun SettingRow(
     trailing: @Composable () -> Unit,
     onClick: (() -> Unit)? = null,
 ) {
-    val modifier = Modifier
+    val rowBase = Modifier
         .fillMaxWidth()
-        .heightIn(min = 56.dp)
+        .heightIn(min = 72.dp) // 行高 64 → 72dp，5.0 参考的"舒适密度"留白
         .let { if (onClick != null) it.clickable(onClick = onClick) else it }
-        .padding(horizontal = 16.dp, vertical = 12.dp)
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(Color(0xFFFFF5F0)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-        }
-        Spacer(Modifier.width(16.dp))
+    Row(
+        modifier = rowBase.padding(horizontal = WujiSpace.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconCircle(icon)
+        Spacer(Modifier.width(WujiSpace.md))
+        // body-lg：Manrope 16sp / 500（DESIGN.md typography.body-lg）
         Text(
             text = title,
-            style = MaterialTheme.typography.bodyLarge,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
         )
         trailing()
     }
 }
 
+/** 行内图标圈：40dp 圆 + surfaceContainer 浅灰底 + onSurfaceVariant 灰图标。 */
 @Composable
-private fun Chevron() {
-    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-}
-
-@Composable
-private fun Divider1px() {
+private fun IconCircle(icon: ImageVector) {
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 72.dp)
-            .height(1.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceContainer),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(22.dp),
+        )
+    }
+}
+
+/** 行间分隔线：从 72dp 起（16dp padding + 40dp icon + 16dp gap）到右边缘。alpha 0.15 极淡。 */
+@Composable
+private fun RowDivider() {
+    Row(modifier = Modifier.fillMaxWidth()) {
+        Spacer(Modifier.width(72.dp))
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f)),
+        )
+    }
+}
+
+/** 行末箭头：与 IconCircle 等高的灰图标（无卡底）。 */
+@Composable
+private fun Chevron() {
+    Icon(
+        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(22.dp),
     )
 }
 
+/** 深色模式三档分段控件。功能权威：三档。 */
 @Composable
 private fun ThreeChoiceDarkMode(current: DarkModePref, onSelect: (DarkModePref) -> Unit) {
     Row(
@@ -315,9 +395,9 @@ private fun ThreeChoiceDarkMode(current: DarkModePref, onSelect: (DarkModePref) 
             .padding(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ChoiceChip3(label = "跟随", selected = current == DarkModePref.FOLLOW_SYSTEM, onClick = { onSelect(DarkModePref.FOLLOW_SYSTEM) })
-        ChoiceChip3(label = "浅色", selected = current == DarkModePref.NO, onClick = { onSelect(DarkModePref.NO) })
-        ChoiceChip3(label = "深色", selected = current == DarkModePref.YES, onClick = { onSelect(DarkModePref.YES) })
+        ChoiceChip3("跟随", current == DarkModePref.FOLLOW_SYSTEM) { onSelect(DarkModePref.FOLLOW_SYSTEM) }
+        ChoiceChip3("浅色", current == DarkModePref.NO) { onSelect(DarkModePref.NO) }
+        ChoiceChip3("深色", current == DarkModePref.YES) { onSelect(DarkModePref.YES) }
     }
 }
 
@@ -331,12 +411,12 @@ private fun ChoiceChip3(label: String, selected: Boolean, onClick: () -> Unit) {
             .padding(horizontal = 12.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
+        // label-sm：Manrope 12sp / 500（DESIGN.md typography.label-sm）
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
             color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
-
-private fun formatAmount(v: Double): String = if (v % 1.0 == 0.0) "%.0f".format(v) else "%.2f".format(v)

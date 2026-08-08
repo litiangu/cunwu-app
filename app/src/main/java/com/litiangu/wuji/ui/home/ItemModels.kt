@@ -2,6 +2,9 @@ package com.litiangu.wuji.ui.home
 
 import com.litiangu.wuji.data.db.ItemStatus
 
+// 隐私模式开启时，所有金额（购入价/净资产/日均/资产总额）统一显示为脱敏占位符。
+const val PRIVACY_MASK = "****"
+
 data class ItemUiModel(
     val id: Long,
     val name: String,

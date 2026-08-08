@@ -39,6 +39,7 @@ import com.litiangu.wuji.ui.theme.WujiSpace
 fun HomeOverview(
     overview: HomeOverview,
     modifier: Modifier = Modifier,
+    privacyMasked: Boolean = false,
 ) {
     Column(
         modifier = modifier,
@@ -51,7 +52,7 @@ fun HomeOverview(
                 iconTint = BrandOrange,
                 icon = Icons.Filled.AccountBalanceWallet,
                 title = "资产总额",
-                value = "¥%,.0f".format(overview.netAsset),
+                value = if (privacyMasked) PRIVACY_MASK else "¥%,.0f".format(overview.netAsset),
             )
             OverviewCard(
                 modifier = Modifier.weight(1f),

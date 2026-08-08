@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.ui.home.ItemUiModel
+import com.litiangu.wuji.ui.home.PRIVACY_MASK
 import com.litiangu.wuji.ui.item.decodeImagePath
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSize
@@ -41,6 +42,7 @@ fun TimelineRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     showLine: Boolean = true,
+    privacyMasked: Boolean = false,
 ) {
     val visual = categoryVisual(item.categoryKey)
     // 竖线色在 @Composable 上下文取（drawBehind 内非 @Composable，不能读主题）
@@ -160,13 +162,13 @@ fun TimelineRow(
                     Spacer(Modifier.width(WujiSpace.md))
                     Column {
                         Text(
-                            text = "¥%,.0f".format(item.netAsset),
+                            text = if (privacyMasked) PRIVACY_MASK else "¥%,.0f".format(item.netAsset),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
-                            text = "日均：¥%.2f/天".format(dailyDepreciation(item)),
+                            text = "日均：" + if (privacyMasked) PRIVACY_MASK else "¥%.2f/天".format(dailyDepreciation(item)),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

@@ -1,5 +1,10 @@
 package com.litiangu.wuji.ui.home
 
+// DEPRECATED（2026-08-08）：本文件的 ItemRow / mapToRows 声称处理隐私脱敏，但从未被
+// HomeViewModel.items 流或任何渲染层调用，属半截死代码。隐私脱敏已改为：在 HomeScreen
+// 收集 privacyMode 后，把 privacyMasked 透传给各渲染 Composable（见 ItemModels.PRIVACY_MASK）。
+// 后续可整体删除本文件。
+
 import androidx.compose.ui.graphics.Color
 import com.litiangu.wuji.data.db.CategoryDao
 import com.litiangu.wuji.data.db.ItemEntity

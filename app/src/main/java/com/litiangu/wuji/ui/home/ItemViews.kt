@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.layout.ContentScale
 import com.litiangu.wuji.ui.designsystem.categoryVisual
+import com.litiangu.wuji.ui.home.PRIVACY_MASK
 import com.litiangu.wuji.ui.item.decodeImagePath
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSize
@@ -35,6 +36,7 @@ fun ItemGridCard(
     item: ItemUiModel,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    privacyMasked: Boolean = false,
 ) {
     val visual = categoryVisual(item.categoryKey)
     Box(
@@ -97,7 +99,7 @@ fun ItemGridCard(
                 horizontalArrangement = Arrangement.spacedBy(WujiSpace.xs),
             ) {
                 Text(
-                    text = "¥%,.0f".format(item.purchasePrice),
+                    text = if (privacyMasked) PRIVACY_MASK else "¥%,.0f".format(item.purchasePrice),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -132,6 +134,7 @@ fun ItemCompactCell(
     item: ItemUiModel,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    privacyMasked: Boolean = false,
 ) {
     val visual = categoryVisual(item.categoryKey)
     Column(
@@ -185,7 +188,7 @@ fun ItemCompactCell(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            text = "¥%,.0f".format(item.purchasePrice),
+            text = if (privacyMasked) PRIVACY_MASK else "¥%,.0f".format(item.purchasePrice),
             style = MaterialTheme.typography.labelMedium,
             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

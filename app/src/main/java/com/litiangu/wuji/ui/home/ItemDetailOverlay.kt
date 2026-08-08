@@ -25,6 +25,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.ui.designsystem.categoryVisual
+import com.litiangu.wuji.ui.home.PRIVACY_MASK
 import com.litiangu.wuji.ui.item.decodeImagePath
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
@@ -45,6 +46,7 @@ fun ItemDetailOverlay(
     item: ItemUiModel,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    privacyMasked: Boolean = false,
 ) {
     val visual = categoryVisual(item.categoryKey)
     Box(
@@ -137,14 +139,14 @@ fun ItemDetailOverlay(
             // 价格 + 日均同一水平（日均在右侧，加大样式）
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
-                    text = "¥%,.0f".format(item.purchasePrice),
+                    text = if (privacyMasked) PRIVACY_MASK else "¥%,.0f".format(item.purchasePrice),
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = "日均 ¥%.2f/天".format(dailyDepreciation(item)),
+                    text = "日均 " + if (privacyMasked) PRIVACY_MASK else "¥%.2f/天".format(dailyDepreciation(item)),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

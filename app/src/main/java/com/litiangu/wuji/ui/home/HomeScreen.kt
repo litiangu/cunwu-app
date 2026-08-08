@@ -89,6 +89,8 @@ fun HomeScreen(
     val sortKey by viewModel.sortKey.collectAsStateWithLifecycle("date")
     val sortOrder by viewModel.sortOrder.collectAsStateWithLifecycle("desc")
     val statusFilter by viewModel.statusFilter.collectAsStateWithLifecycle(emptySet())
+    // 隐私模式：开关在设置页，存储于同一 DataStore；此处收集后透传给各金额渲染处做脱敏。
+    val privacyMasked by viewModel.privacyMode.collectAsStateWithLifecycle(false)
 
     val overview = remember(items) { items.toOverview() }
 
@@ -247,7 +249,7 @@ fun HomeScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
-                item { HomeOverview(overview = overview) }
+                item { HomeOverview(overview = overview, privacyMasked = privacyMasked) }
                 item { Spacer(Modifier.height(WujiSpace.md)) }
                 item {
                     CategoryFilterBar(
@@ -289,6 +291,7 @@ fun HomeScreen(
                         ) {
                             TimelineRow(
                                 item = item,
+                                privacyMasked = privacyMasked,
                                 onClick = {
                                     val wasOpen = openItemId == item.id
                                     if (openItemId != null) openItemId = null
@@ -317,7 +320,7 @@ fun HomeScreen(
                 // 使分割线到首行卡片的间距大于默认列表。合并后由块内 Spacer 精确控制。
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        HomeOverview(overview = overview)
+                        HomeOverview(overview = overview, privacyMasked = privacyMasked)
                         Spacer(Modifier.height(WujiSpace.md))
                         CategoryFilterBar(
                             categories = categories,
@@ -369,6 +372,7 @@ fun HomeScreen(
                             if (viewMode == "card-2x2") {
                                 ItemGridCard(
                                     item = item,
+                                    privacyMasked = privacyMasked,
                                     onClick = {
                                         val wasOpen = openItemId == item.id
                                     if (openItemId != null) openItemId = null
@@ -378,6 +382,7 @@ fun HomeScreen(
                             } else {
                                 ItemCompactCell(
                                     item = item,
+                                    privacyMasked = privacyMasked,
                                     onClick = {
                                         val wasOpen = openItemId == item.id
                                     if (openItemId != null) openItemId = null
@@ -393,7 +398,7 @@ fun HomeScreen(
     }
 
     detailItem?.let { item ->
-        ItemDetailOverlay(item = item, onDismiss = { detailItem = null })
+        ItemDetailOverlay(item = item, privacyMasked = privacyMasked, onDismiss = { detailItem = null })
     }
 
     // 删除二次确认（软删除，可在「设置-最近删除」30 天内找回）
