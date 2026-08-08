@@ -20,10 +20,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.luminance
 import com.litiangu.wuji.ui.theme.BrandOrange
+import com.litiangu.wuji.ui.theme.BrandOrangeDark
+import com.litiangu.wuji.ui.theme.TintBlueDark
 import com.litiangu.wuji.ui.theme.TintBlueLight
+import com.litiangu.wuji.ui.theme.TintGreenDark
 import com.litiangu.wuji.ui.theme.TintGreenLight
-import com.litiangu.wuji.ui.theme.TintOrangeLight
+import com.litiangu.wuji.ui.theme.TintOrangeDark
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSize
 import com.litiangu.wuji.ui.theme.WujiSpace
@@ -41,6 +45,19 @@ fun HomeOverview(
     modifier: Modifier = Modifier,
     privacyMasked: Boolean = false,
 ) {
+    // 深色判定（沿用项目约定：按当前 colorScheme 亮度，覆盖跟随系统/强制档）
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val brand = if (isDark) BrandOrangeDark else BrandOrange
+    // 卡1 浅色真值 #F5E2DF 保留，深色走 TintOrangeDark；不退化亮色表现
+    val tintOrangeA = if (isDark) TintOrangeDark else Color(0xFFF5E2DF)
+    // 卡2 浅色真值 #F5ECEB 保留；深色走中性暗面 surfaceContainer，保持「中性」语义而非橙色
+    val tintOrangeB = if (isDark) MaterialTheme.colorScheme.surfaceContainer else Color(0xFFF5ECEB)
+    val tintBlue = if (isDark) TintBlueDark else TintBlueLight
+    val tintGreen = if (isDark) TintGreenDark else TintGreenLight
+    // 蓝色在深底上提亮保对比（对齐 -night cat-active dark）
+    val accentBlue = if (isDark) Color(0xFF4DA6FF) else Color(0xFF0088FF)
+    val neutralIcon = if (isDark) MaterialTheme.colorScheme.onSurface else Color(0xFF21110F)
+
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(WujiSpace.md),
@@ -48,16 +65,16 @@ fun HomeOverview(
         Row(horizontalArrangement = Arrangement.spacedBy(WujiSpace.md)) {
             OverviewCard(
                 modifier = Modifier.weight(1f),
-                tint = Color(0xFFF5E2DF),
-                iconTint = BrandOrange,
+                tint = tintOrangeA,
+                iconTint = brand,
                 icon = Icons.Filled.AccountBalanceWallet,
                 title = "资产总额",
                 value = if (privacyMasked) PRIVACY_MASK else "¥%,.0f".format(overview.netAsset),
             )
             OverviewCard(
                 modifier = Modifier.weight(1f),
-                tint = Color(0xFFF5ECEB),
-                iconTint = Color(0xFF21110F),
+                tint = tintOrangeB,
+                iconTint = neutralIcon,
                 icon = Icons.Filled.Inventory2,
                 title = "物品总数",
                 value = "${overview.totalCount}",
@@ -66,17 +83,17 @@ fun HomeOverview(
         Row(horizontalArrangement = Arrangement.spacedBy(WujiSpace.md)) {
             OverviewCard(
                 modifier = Modifier.weight(1f),
-                tint = TintBlueLight,
-                iconTint = Color(0xFF0088FF),
+                tint = tintBlue,
+                iconTint = accentBlue,
                 icon = Icons.Filled.DonutSmall,
                 title = "使用状态",
                 value = "%.0f%%".format(overview.useRatePercent),
                 subLabel = overview.useStateLabel,
-                subColor = Color(0xFF0088FF),
+                subColor = accentBlue,
             )
             OverviewCard(
                 modifier = Modifier.weight(1f),
-                tint = TintGreenLight,
+                tint = tintGreen,
                 iconTint = healthColor(overview.healthLabel),
                 icon = Icons.Filled.HealthAndSafety,
                 title = "消费健康",

@@ -113,6 +113,16 @@ val CategorySportLight = Color(0xFF9C27B0)
 val CategoryTrafficLight = Color(0xFF00BCD4)
 val CategoryCustomLight = Color(0xFF9E9E9E)
 
+// 分类前景色暗色变体：在深色 tint 圈底（TintXxxDark）上保证可读性。
+// 取值对齐「深色模式令牌清单(-night)」第 2.1 节建议的 cat-* dark。
+val CategoryDigitalDark = Color(0xFFFFB59C)
+val CategoryApplianceDark = Color(0xFF4DA6FF)
+val CategoryFurnitureDark = Color(0xFF66BB6A)
+val CategoryToolDark = Color(0xFFFFCA4D)
+val CategoryTrafficDark = Color(0xFF4DD0E1)
+val CategorySportDark = Color(0xFFCE93D8)
+val CategoryCustomDark = Color(0xFFBDBDBD)
+
 val LightCategoryPalette = CategoryPalette(
     digital = CategoryDigitalLight,
     appliance = CategoryApplianceLight,

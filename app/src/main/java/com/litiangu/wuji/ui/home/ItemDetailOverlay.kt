@@ -12,6 +12,7 @@ import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -97,7 +98,12 @@ fun ItemDetailOverlay(
                         ),
                 )
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = onDismiss) {
+                IconButton(
+                    onClick = onDismiss,
+                    colors = IconButtonDefaults.iconButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+                ) {
                     Icon(Icons.Filled.Close, contentDescription = "关闭")
                 }
             }
