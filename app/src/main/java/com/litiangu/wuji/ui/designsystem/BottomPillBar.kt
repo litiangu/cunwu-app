@@ -14,6 +14,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -36,6 +37,7 @@ fun BottomPillBar(
     modifier: Modifier = Modifier,
 ) {
     val fabProtrude = 20.dp
+    val context = LocalContext.current
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -59,7 +61,10 @@ fun BottomPillBar(
             items.forEach { tab ->
                 NavigationBarItem(
                     selected = tab == selected,
-                    onClick = { onSelect(tab) },
+                    onClick = {
+                        onSelect(tab)
+                        context.fireHapticIfEnabled()
+                    },
                     icon = { Icon(tab.icon, contentDescription = tab.label) },
                     label = { Text(tab.label) },
                 )
@@ -67,7 +72,10 @@ fun BottomPillBar(
         }
         // 中央 FAB：凸起于 pill 顶部（FAB 半高 28dp，顶到 Box 顶部）
         FloatingActionButton(
-            onClick = onFabClick,
+            onClick = {
+                onFabClick()
+                context.fireHapticIfEnabled()
+            },
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .shadow(

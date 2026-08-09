@@ -25,6 +25,9 @@ class SettingsViewModel(
     val privacyMode: StateFlow<Boolean> = settings.privacyModeFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val hapticFeedback: StateFlow<Boolean> = settings.hapticFeedbackFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val budgetAnchor: StateFlow<Double> = settings.budgetAnchorFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DEFAULT_DAILY_BUDGET_ANCHOR)
 
@@ -34,6 +37,10 @@ class SettingsViewModel(
 
     fun setPrivacyMode(enabled: Boolean) {
         viewModelScope.launch { settings.setPrivacyMode(enabled) }
+    }
+
+    fun setHapticFeedback(enabled: Boolean) {
+        viewModelScope.launch { settings.setHapticFeedback(enabled) }
     }
 
     fun saveBudgetAnchor(value: Double) {

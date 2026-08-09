@@ -35,10 +35,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.litiangu.wuji.ui.designsystem.fireHapticIfEnabled
 import com.litiangu.wuji.ui.theme.WujiRadius
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
@@ -86,6 +88,7 @@ fun SwipeableItemCard(
     content: @Composable () -> Unit,
 ) {
     val localDensity = LocalDensity.current
+    val context = LocalContext.current
     val actionWidth = density.actionWidth
     val actionWidthPx = with(localDensity) { actionWidth.toPx() }
     // 吸附阈值：位移超过按钮区一半即展开
@@ -118,6 +121,7 @@ fun SwipeableItemCard(
         // 背后右侧操作区。默认列表左右并排（对齐 3.2）；网格模式上下堆叠，
         // 用窄列换取足够高的按钮触达面，避免单格过窄时按钮宽度不足 44dp。
         val editClick: () -> Unit = {
+            context.fireHapticIfEnabled()
             scope.launch {
                 offsetX.animateTo(0f)
                 onOpenChange(false)
@@ -125,6 +129,7 @@ fun SwipeableItemCard(
             }
         }
         val deleteClick: () -> Unit = {
+            context.fireHapticIfEnabled()
             scope.launch {
                 offsetX.animateTo(0f)
                 onOpenChange(false)

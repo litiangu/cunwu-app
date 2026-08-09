@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.data.settings.DarkModePref
 import com.litiangu.wuji.data.settings.SettingsDataStore
+import com.litiangu.wuji.ui.designsystem.Haptics
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
 import kotlinx.coroutines.launch
@@ -72,6 +73,7 @@ fun SettingsScreen(onBack: () -> Unit = {}) {
     val viewModel = remember { SettingsViewModel(settings) }
     val darkMode by viewModel.darkMode.collectAsStateWithLifecycle()
     val privacyMode by viewModel.privacyMode.collectAsStateWithLifecycle()
+    val hapticFeedback by viewModel.hapticFeedback.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     Scaffold(
@@ -163,8 +165,12 @@ fun SettingsScreen(onBack: () -> Unit = {}) {
                     title = "震动反馈",
                     trailing = {
                         Switch(
-                            checked = false,
-                            onCheckedChange = { /* TODO Step 20：接入 Vibrator */ },
+                            checked = hapticFeedback,
+                            onCheckedChange = { v ->
+                                viewModel.setHapticFeedback(v)
+                                // 开启动作自身给触感确认；关闭后全局静默（不震）。
+                                if (v) Haptics.light(context)
+                            },
                         )
                     },
                 )

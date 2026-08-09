@@ -75,6 +75,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import com.litiangu.wuji.ui.designsystem.fireHapticIfEnabled
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -210,7 +211,10 @@ fun ItemEditScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = { viewModel.save(onDone) }) {
+                    TextButton(onClick = {
+                        context.fireHapticIfEnabled()
+                        viewModel.save(onDone)
+                    }) {
                         Text("保存", color = MaterialTheme.colorScheme.primary)
                     }
                 }
@@ -673,7 +677,11 @@ private fun ImageUploadScreen(
             },
             actions = {
                 // 右上角「保存」：保存当前图片/抠图选择并退出回表单
-                TextButton(onClick = onDismiss) {
+                TextButton(onClick = {
+                    // 提交类 CTA：开启震动时给轻触确认（Step 19）。
+                    context.fireHapticIfEnabled()
+                    onDismiss()
+                }) {
                     Text("保存", color = brand, fontWeight = FontWeight.Bold)
                 }
             }

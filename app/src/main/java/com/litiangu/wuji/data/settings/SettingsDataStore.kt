@@ -38,6 +38,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 
 private val DARK_MODE_KEY = intPreferencesKey("dark_mode")     // 存 DarkModePref.value
 private val PRIVACY_MODE_KEY = booleanPreferencesKey("privacy_mode")
+private val HAPTIC_FEEDBACK_KEY = booleanPreferencesKey("haptic_feedback")  // 震动反馈开关
 private val BUDGET_ANCHOR_KEY = doublePreferencesKey("budget_anchor")
 private val VIEW_MODE_KEY = stringPreferencesKey("view_mode")   // list-default / card-2x2 / list-compact
 private val HAS_LAUNCHED_BEFORE_KEY = booleanPreferencesKey("has_launched_before")  // 首次启动引导标记
@@ -52,12 +53,20 @@ class SettingsDataStore(private val context: Context) {
     val privacyModeFlow: Flow<Boolean> = context.dataStore.data
         .map { prefs -> prefs[PRIVACY_MODE_KEY] ?: false }
 
+    // 震动反馈开关（默认关闭）：开启时关键操作给轻震动，关闭时全局静默。
+    val hapticFeedbackFlow: Flow<Boolean> = context.dataStore.data
+        .map { prefs -> prefs[HAPTIC_FEEDBACK_KEY] ?: false }
+
     suspend fun setDarkMode(pref: DarkModePref) {
         context.dataStore.edit { it[DARK_MODE_KEY] = pref.value }
     }
 
     suspend fun setPrivacyMode(enabled: Boolean) {
         context.dataStore.edit { it[PRIVACY_MODE_KEY] = enabled }
+    }
+
+    suspend fun setHapticFeedback(enabled: Boolean) {
+        context.dataStore.edit { it[HAPTIC_FEEDBACK_KEY] = enabled }
     }
 
     // 预算锚点（健康分 D2 价值维度比对的每日基准，默认 ¥100，对齐引擎常量）

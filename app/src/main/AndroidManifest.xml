@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Step 19：震动反馈。minSdk=34 框架免权限，仍声明以兼容个别厂商 ROM。 -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <application
         android:name=".WujiApplication"
         android:allowBackup="true"
