@@ -99,6 +99,24 @@ fun decodeImagePath(imagePath: String?): android.graphics.Bitmap? {
 }
 
 /**
+ * 删除本地图片文件（容错：路径为空/空白或文件不存在直接返回）。
+ * 用于物品永久删除 / 回收站清空时清理应用私有 images 目录下的原图与抠图 PNG，
+ * 避免孤儿文件长期堆积占用空间。
+ *
+ * 存储路径是 ItemEntity.imagePath / croppedImagePath 的绝对路径（含目录），
+ * 因此用 File(path).delete() 即可，无需再拼 filesDir。
+ */
+fun deleteImagePath(path: String?) {
+    if (path.isNullOrBlank()) return
+    try {
+        val f = File(path)
+        if (f.exists()) f.delete()
+    } catch (_: Exception) {
+        // 删除失败（如权限/IO 异常）静默忽略，不阻塞主流程。
+    }
+}
+
+/**
  * Step 16：将抠图得到的透明前景 Bitmap 以 PNG 压缩存入应用私有 images 目录。
  * 必须用 PNG（JPEG 不支持透明，会填黑/白底毁掉贴纸效果）。
  *

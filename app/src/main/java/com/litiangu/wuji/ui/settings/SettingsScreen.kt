@@ -68,7 +68,11 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit = {}, onBudgetAnchor: () -> Unit = {}) {
+fun SettingsScreen(
+    onBack: () -> Unit = {},
+    onBudgetAnchor: () -> Unit = {},
+    onTrash: () -> Unit = {},
+) {
     val context = LocalContext.current
     val settings = remember { SettingsDataStore(context) }
     val viewModel = remember { SettingsViewModel(settings) }
@@ -185,7 +189,7 @@ fun SettingsScreen(onBack: () -> Unit = {}, onBudgetAnchor: () -> Unit = {}) {
                     icon = Icons.Filled.DeleteOutline,
                     title = "最近删除",
                     trailing = { Chevron() },
-                    onClick = { /* TODO Step 21：跳转最近删除页 */ },
+                    onClick = onTrash,
                 )
                 RowDivider()
                 SettingRow(
@@ -215,7 +219,7 @@ fun SettingsScreen(onBack: () -> Unit = {}, onBudgetAnchor: () -> Unit = {}) {
                     icon = Icons.Filled.CloudUpload,
                     title = "数据备份",
                     trailing = { Chevron() },
-                    onClick = { /* TODO Step 22：跳转数据备份页 */ },
+                    onClick = { /* TODO Step 23：跳转数据备份页 */ },
                 )
             }
 
