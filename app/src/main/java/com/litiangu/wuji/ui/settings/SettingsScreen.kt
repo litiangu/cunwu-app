@@ -73,6 +73,7 @@ fun SettingsScreen(
     onBudgetAnchor: () -> Unit = {},
     onTrash: () -> Unit = {},
     onBackup: () -> Unit = {},
+    onAbout: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val settings = remember { SettingsDataStore(context) }
@@ -231,7 +232,7 @@ fun SettingsScreen(
                     icon = Icons.Filled.Info,
                     title = "关于本应用",
                     trailing = { Chevron() },
-                    onClick = { /* TODO Step 23：跳转关于页 */ },
+                    onClick = onAbout,
                 )
             }
 
