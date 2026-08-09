@@ -67,7 +67,12 @@ fun AnalysisScreen(
     val context = LocalContext.current
     val viewModel = remember {
         val db = WujiDatabaseProvider.get(context)
-        AnalysisViewModel(db.itemDao(), db.categoryDao(), SettingsDataStore(context))
+        AnalysisViewModel(
+            db.itemDao(),
+            db.categoryDao(),
+            db.categoryBudgetDao(),
+            SettingsDataStore(context)
+        )
     }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -101,6 +106,7 @@ fun AnalysisScreen(
 
             HealthCard(state)
             AssetsCard(state)
+            BudgetCard(state)
             CategoryDistributionCard(state)
             TrendCard(state)
         }
@@ -222,6 +228,89 @@ private fun DimensionBar(label: String, value: Double, barColor: Color) {
             textAlign = TextAlign.End,
             modifier = Modifier.width(28.dp)
         )
+    }
+}
+
+// ===== 预算遵从卡（Step 21）：全局月度比对 + 分类限额高亮 =====
+// 仅当「全局月度预算已配置」或「存在分类限额」时渲染，护住零配置中性（不污染健康分、不弹无意义预警）。
+@Composable
+private fun BudgetCard(state: AnalysisUiState) {
+    val visible = state.monthlyBudget > 0 || state.categoryBudgetRows.isNotEmpty()
+    if (!visible) return
+
+    val overGlobal = state.monthlyBudget > 0 && state.recentSpend30 > state.monthlyBudget
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("预算遵从", style = MaterialTheme.typography.titleMedium)
+
+            // 全局月度比对（仅配置了全局月度预算才显示本段）
+            if (state.monthlyBudget > 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "本月支出 ${formatYuan(state.recentSpend30)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        "预算 ${formatYuan(state.monthlyBudget)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                // 超支徽标：红=已超支，灰=未超支（主题安全，不依赖固定色）
+                val badgeText = if (overGlobal) "已超支" else "未超支"
+                val badgeColor = if (overGlobal) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                Text(
+                    badgeText,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = badgeColor,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            // 分类限额高亮（仅含「已设限额」的分类）
+            if (state.categoryBudgetRows.isNotEmpty()) {
+                if (state.monthlyBudget > 0) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    )
+                }
+                Text(
+                    "分类限额（近 30 天）",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                state.categoryBudgetRows.forEach { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            row.label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (row.over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            "${formatYuan(row.spend)} / ${formatYuan(row.limit)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (row.over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = if (row.over) FontWeight.SemiBold else FontWeight.Normal
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

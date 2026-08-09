@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.litiangu.wuji.data.settings.DarkModePref
 import com.litiangu.wuji.data.settings.SettingsDataStore
-import com.litiangu.wuji.domain.DEFAULT_DAILY_BUDGET_ANCHOR
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -28,8 +28,13 @@ class SettingsViewModel(
     val hapticFeedback: StateFlow<Boolean> = settings.hapticFeedbackFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    val budgetAnchor: StateFlow<Double> = settings.budgetAnchorFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DEFAULT_DAILY_BUDGET_ANCHOR)
+    // 预算锚点直接暴露 Flow（不用 StateFlow）。
+    // StateFlow 的初始默认值会先于 DataStore 真实值到达，导致输入框先闪默认数字再跳变。
+    // Flow + UI 层 NaN 初始值可等 DataStore 第一次真实发射后再回填，消除跳变。
+    val budgetAnchor: Flow<Double> = settings.budgetAnchorFlow
+
+    // L1 月度预算锚点（Step 21）：默认 0 = 未配置。同样用 Flow 避免输入框跳变。
+    val monthlyBudgetAnchor: Flow<Double> = settings.monthlyBudgetAnchorFlow
 
     fun setDarkMode(pref: DarkModePref) {
         viewModelScope.launch { settings.setDarkMode(pref) }
@@ -45,5 +50,10 @@ class SettingsViewModel(
 
     fun saveBudgetAnchor(value: Double) {
         viewModelScope.launch { settings.setBudgetAnchor(value) }
+    }
+
+    // L1 月度预算锚点写入入口（Step 21）。
+    fun saveMonthlyBudgetAnchor(value: Double) {
+        viewModelScope.launch { settings.setMonthlyBudgetAnchor(value) }
     }
 }

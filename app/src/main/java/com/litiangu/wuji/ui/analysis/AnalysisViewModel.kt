@@ -2,6 +2,8 @@ package com.litiangu.wuji.ui.analysis
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.litiangu.wuji.data.db.CategoryBudgetDao
+import com.litiangu.wuji.data.db.CategoryBudgetEntity
 import com.litiangu.wuji.data.db.CategoryDao
 import com.litiangu.wuji.data.db.CategoryEntity
 import com.litiangu.wuji.data.db.ItemDao
@@ -22,6 +24,9 @@ data class CategoryBarData(val label: String, val value: Double, val count: Int)
 // 月度趋势的一个点：月份标签 + 当月投入（购入+附加）
 data class MonthlyData(val label: String, val value: Double)
 
+// 分类预算一行：分类名 + 近 30 天支出 + 该类月度限额 + 是否超支（Step 21 L2）
+data class CategoryBudgetRow(val label: String, val spend: Double, val limit: Double, val over: Boolean)
+
 // 分析页全部展示数据
 data class AnalysisUiState(
     val hasItems: Boolean = false,
@@ -36,31 +41,46 @@ data class AnalysisUiState(
     val totalRecovery: Double = 0.0,        // 已变现：全部 二手收益
     val netHolding: Double = 0.0,           // 净持有 = 未售出投入 − 全部变现
     val categoryBars: List<CategoryBarData> = emptyList(),
-    val monthlyTrend: List<MonthlyData> = emptyList()
+    val monthlyTrend: List<MonthlyData> = emptyList(),
+    // ===== Step 21 预算遵从信号（独立，不进健康分）=====
+    val monthlyBudget: Double = 0.0,        // 全局月度预算（0 = 未配置）
+    val recentSpend30: Double = 0.0,        // 近 30 天支出（购入+附加）
+    val categoryBudgetRows: List<CategoryBudgetRow> = emptyList() // 仅含「已设限额」的分类
 )
 
 /**
- * 分析页：健康分（含四维拆解）+ 资产结构 + 分类分布 + 月度趋势。
+ * 分析页：健康分（含四维拆解）+ 资产结构 + 分类分布 + 月度趋势 + 预算遵从（Step 21）。
  * 全部由 Room Flow + 预算锚点流组合计算，数据变化自动刷新。
  */
 class AnalysisViewModel(
     private val itemDao: ItemDao,
     private val categoryDao: CategoryDao,
+    private val categoryBudgetDao: CategoryBudgetDao,
     private val settings: SettingsDataStore
 ) : ViewModel() {
+
+    // 把「月度锚点 + 分类预算」合成一个 Pair 流，保持 combine 元数 = 4（兼容性更稳）。
+    private val budgetConfig = combine(
+        settings.monthlyBudgetAnchorFlow,
+        categoryBudgetDao.observeAll()
+    ) { monthly, budgets -> monthly to budgets }
 
     val uiState: StateFlow<AnalysisUiState> = combine(
         itemDao.observeAll(),
         categoryDao.observeAll(),
-        settings.budgetAnchorFlow
-    ) { items, categories, anchor ->
-        buildState(items, categories, anchor)
+        settings.budgetAnchorFlow,
+        budgetConfig
+    ) { items, categories, anchor, cfg ->
+        val (monthly, budgets) = cfg
+        buildState(items, categories, anchor, monthly, budgets)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AnalysisUiState())
 
     private fun buildState(
         items: List<ItemEntity>,
         categories: List<CategoryEntity>,
-        anchor: Double
+        anchor: Double,
+        monthlyBudget: Double,
+        budgets: List<CategoryBudgetEntity>
     ): AnalysisUiState {
         val inputs = items.map { it.toItemInput() }
         val result = computeHealthScore(inputs, anchor)
@@ -82,6 +102,25 @@ class AnalysisViewModel(
             }
             .sortedByDescending { it.value }
 
+        // ===== Step 21：近 30 天支出 + 分类限额比对 =====
+        // 近 30 天窗口（epoch 毫秒）。purchaseDate 为空（极老数据）的物品按 0 处理，自然被 cutoff 排除。
+        val cutoff = System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
+        val recentItems = items.filter { it.purchaseDate >= cutoff }
+        val recentSpend30 = recentItems.sumOf { it.purchasePrice + it.extraCost }
+
+        // 仅对「已设限额」的分类生成一行（未设限额的回落到全局月度预算，不单列）。
+        val limitById = budgets.associate { it.categoryId to it.monthlyLimit }
+        val categoryBudgetRows = categories
+            .filter { it.id in limitById }
+            .map { cat ->
+                val spend = recentItems
+                    .filter { it.categoryId == cat.id }
+                    .sumOf { it.purchasePrice + it.extraCost }
+                val limit = limitById[cat.id] ?: 0.0
+                CategoryBudgetRow(cat.name, spend, limit, spend > limit)
+            }
+            .sortedByDescending { it.spend }
+
         return AnalysisUiState(
             hasItems = items.isNotEmpty(),
             score = result.totalRounded,
@@ -95,7 +134,10 @@ class AnalysisViewModel(
             totalRecovery = totalRecovery,
             netHolding = totalInput - totalRecovery,
             categoryBars = bars,
-            monthlyTrend = buildMonthlyTrend(items)
+            monthlyTrend = buildMonthlyTrend(items),
+            monthlyBudget = monthlyBudget,
+            recentSpend30 = recentSpend30,
+            categoryBudgetRows = categoryBudgetRows
         )
     }
 

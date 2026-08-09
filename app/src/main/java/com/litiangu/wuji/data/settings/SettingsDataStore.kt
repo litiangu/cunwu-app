@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.litiangu.wuji.domain.DEFAULT_DAILY_BUDGET_ANCHOR
+import com.litiangu.wuji.domain.DEFAULT_MONTHLY_BUDGET_ANCHOR
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -40,6 +41,7 @@ private val DARK_MODE_KEY = intPreferencesKey("dark_mode")     // 存 DarkModePr
 private val PRIVACY_MODE_KEY = booleanPreferencesKey("privacy_mode")
 private val HAPTIC_FEEDBACK_KEY = booleanPreferencesKey("haptic_feedback")  // 震动反馈开关
 private val BUDGET_ANCHOR_KEY = doublePreferencesKey("budget_anchor")
+private val MONTHLY_BUDGET_ANCHOR_KEY = doublePreferencesKey("monthly_budget_anchor")
 private val VIEW_MODE_KEY = stringPreferencesKey("view_mode")   // list-default / card-2x2 / list-compact
 private val HAS_LAUNCHED_BEFORE_KEY = booleanPreferencesKey("has_launched_before")  // 首次启动引导标记
 
@@ -75,6 +77,14 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun setBudgetAnchor(value: Double) {
         context.dataStore.edit { it[BUDGET_ANCHOR_KEY] = value }
+    }
+
+    // L1 月度预算锚点（Step 21）：默认 0 = 未配置。分析页预算卡仅在其 > 0 时渲染。
+    val monthlyBudgetAnchorFlow: Flow<Double> = context.dataStore.data
+        .map { prefs -> prefs[MONTHLY_BUDGET_ANCHOR_KEY] ?: DEFAULT_MONTHLY_BUDGET_ANCHOR }
+
+    suspend fun setMonthlyBudgetAnchor(value: Double) {
+        context.dataStore.edit { it[MONTHLY_BUDGET_ANCHOR_KEY] = value }
     }
 
     // 首页视图密度三态（list-default / card-2x2 / list-compact），默认 list-default

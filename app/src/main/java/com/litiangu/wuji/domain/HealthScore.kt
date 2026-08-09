@@ -73,6 +73,10 @@ private const val D4_CAP = 0.60 // 变现回收封顶 60%
 // 预算锚点：默认 ¥3000/月 → 每日 ≈ ¥100（D2 比对用）
 const val DEFAULT_DAILY_BUDGET_ANCHOR = 100.0
 
+// 月度预算锚点（L1，Step 21 新增）：默认 0 表示「未配置」，分析页预算卡仅在其 > 0 时渲染，
+// 保护零配置中性行为（不污染健康分、不弹无意义的超支预警）。用户配置后由 DataStore 持久化。
+const val DEFAULT_MONTHLY_BUDGET_ANCHOR = 0.0
+
 // 等级阈值（分析评语四档；首页等级另用 80/60 双阈，属展示层，不在引擎内）
 private const val T_EXCELLENT = 85.0
 private const val T_GOOD = 70.0

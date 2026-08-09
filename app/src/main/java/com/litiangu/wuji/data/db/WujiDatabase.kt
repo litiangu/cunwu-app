@@ -11,12 +11,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-// 数据库定义：items / categories / trash 三表。
-// 版本 3：在 v2 基础上为 items 新增 imageDisplayMode 列（展示态），Migration(2,3) 仅加列不清库。
+// 数据库定义：items / categories / trash / category_budgets 四表。
+// 版本 4：在 v3 基础上新建 category_budgets 表（分类月度预算，Step 21 L2），Migration(3,4) 仅建表不清库。
 // @TypeConverters 让全局能用 Converters（枚举 <-> 字符串）。
 @Database(
-    entities = [ItemEntity::class, CategoryEntity::class, TrashEntity::class],
-    version = 3,
+    entities = [ItemEntity::class, CategoryEntity::class, TrashEntity::class, CategoryBudgetEntity::class],
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -24,6 +24,7 @@ abstract class WujiDatabase : RoomDatabase() {
     abstract fun itemDao(): ItemDao
     abstract fun categoryDao(): CategoryDao
     abstract fun trashDao(): TrashDao
+    abstract fun categoryBudgetDao(): CategoryBudgetDao
 
     companion object {
         const val DATABASE_NAME = "wuji.db"
@@ -60,6 +61,21 @@ abstract class WujiDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE items ADD COLUMN imageDisplayMode INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        // 版本 3 → 4：新建 category_budgets 表（分类月度预算，Step 21 L2），保留既有数据。
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `category_budgets` (
+                        `categoryId` INTEGER NOT NULL,
+                        `monthlyLimit` REAL NOT NULL,
+                        PRIMARY KEY(`categoryId`)
+                    )
+                    """.trimIndent()
                 )
             }
         }
@@ -100,6 +116,7 @@ object WujiDatabaseProvider {
                 .fallbackToDestructiveMigration(true) // 无对应 Migration 时兜底清库（开发期可接受）
                 .addMigrations(WujiDatabase.MIGRATION_1_2) // 1→2 仅建 trash 表，保留旧数据
                 .addMigrations(WujiDatabase.MIGRATION_2_3) // 2→3 加 imageDisplayMode 列，保留旧数据
+                .addMigrations(WujiDatabase.MIGRATION_3_4) // 3→4 建 category_budgets 表，保留旧数据
                 .build()
                 .also { INSTANCE = it }
                 .also {

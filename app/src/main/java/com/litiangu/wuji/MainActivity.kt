@@ -85,6 +85,7 @@ fun WujiApp() {
         var showCustomCategoryDialog by remember { mutableStateOf(false) }
 
         // Step 20 新增：预算锚点编辑子页状态（以全屏 overlay 叠在设置页之上）。
+        // Step 21 增强：分类月度预算直接内联在本页，不再独立 overlay。
         var showBudgetAnchor by remember { mutableStateOf(false) }
 
         // 启动就绪闸门：WujiApplication 预热完成（数据库构建完 + 首启标记读出）后 isReady=true。
@@ -209,8 +210,9 @@ fun WujiApp() {
                 )
             }
 
-            // ====== 预算锚点编辑子页 overlay（Step 20 新增）======
+            // ====== 预算锚点编辑子页 overlay（Step 20 新增，Step 21 增强）======
             // 叠在设置页之上：showSettings 保持 true，返回时仅关本页，设置页原样露出。
+            // Step 21：分类月度预算直接内联在本页，无需额外 overlay。
             if (showBudgetAnchor) {
                 BudgetAnchorScreen(onBack = { showBudgetAnchor = false })
             }
