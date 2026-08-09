@@ -72,6 +72,7 @@ fun SettingsScreen(
     onBack: () -> Unit = {},
     onBudgetAnchor: () -> Unit = {},
     onTrash: () -> Unit = {},
+    onBackup: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val settings = remember { SettingsDataStore(context) }
@@ -219,7 +220,7 @@ fun SettingsScreen(
                     icon = Icons.Filled.CloudUpload,
                     title = "数据备份",
                     trailing = { Chevron() },
-                    onClick = { /* TODO Step 23：跳转数据备份页 */ },
+                    onClick = onBackup,
                 )
             }
 

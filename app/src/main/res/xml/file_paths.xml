@@ -5,4 +5,6 @@
     <cache-path name="camera_cache" path="." />
     <!-- 图片正式存放于 filesDir/images（虽然一般不需要通过 FileProvider 共享，但预留） -->
     <files-path name="images" path="images/" />
+    <!-- Step 23：备份 zip 存于外部私有存储 wuji_backups，分享备份文件需经 FileProvider -->
+    <external-files-path name="backups" path="wuji_backups" />
 </paths>

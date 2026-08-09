@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
 
@@ -69,4 +70,7 @@ dependencies {
 
     // Step16 智能抠图：ormbg-LiteRT（ISNet 架构，TFLite 模型打包进 assets，Google LiteRT 推理，纯端侧无 GMS 依赖）
     implementation(libs.litert)
+
+    // Step23 数据备份：kotlinx.serialization 序列化 JSON（导出/导入）
+    implementation(libs.kotlinx.serialization.json)
 }

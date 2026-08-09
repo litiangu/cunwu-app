@@ -33,6 +33,7 @@ import com.litiangu.wuji.ui.category.CustomCategoryDialog
 import com.litiangu.wuji.ui.settings.SettingsScreen
 import com.litiangu.wuji.ui.settings.BudgetAnchorScreen
 import com.litiangu.wuji.ui.settings.TrashScreen
+import com.litiangu.wuji.ui.settings.BackupScreen
 import com.litiangu.wuji.ui.theme.WujiTheme
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -91,6 +92,9 @@ fun WujiApp() {
 
         // Step 22 新增：最近删除（回收站）列表页状态（以全屏 overlay 叠在设置页之上）。
         var showTrash by remember { mutableStateOf(false) }
+
+        // Step 23 新增：数据备份（导出 / 导入）页状态（以全屏 overlay 叠在设置页之上）。
+        var showBackup by remember { mutableStateOf(false) }
 
         // 启动就绪闸门：WujiApplication 预热完成（数据库构建完 + 首启标记读出）后 isReady=true。
         val app = context.applicationContext as WujiApplication
@@ -212,6 +216,7 @@ fun WujiApp() {
                     onBack = { showSettings = false },
                     onBudgetAnchor = { showBudgetAnchor = true },
                     onTrash = { showTrash = true },
+                    onBackup = { showBackup = true },
                 )
             }
 
@@ -226,6 +231,13 @@ fun WujiApp() {
                     trashDao = db.trashDao(),
                     categoryDao = db.categoryDao(),
                 )
+            }
+
+            // ====== 数据备份（导出 / 导入）页 overlay（Step 23 新增）======
+            // 叠在设置页之上：showSettings 保持 true，返回时仅关本页，设置页原样露出。
+            // db / settings 由 BackupScreen 内部经单例取，无需在此传参。
+            if (showBackup) {
+                BackupScreen(onBack = { showBackup = false })
             }
 
             // ====== 预算锚点编辑子页 overlay（Step 20 新增，Step 21 增强）======

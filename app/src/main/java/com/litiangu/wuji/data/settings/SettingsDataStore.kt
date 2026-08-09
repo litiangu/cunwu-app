@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.litiangu.wuji.domain.DEFAULT_DAILY_BUDGET_ANCHOR
@@ -44,6 +45,9 @@ private val BUDGET_ANCHOR_KEY = doublePreferencesKey("budget_anchor")
 private val MONTHLY_BUDGET_ANCHOR_KEY = doublePreferencesKey("monthly_budget_anchor")
 private val VIEW_MODE_KEY = stringPreferencesKey("view_mode")   // list-default / card-2x2 / list-compact
 private val HAS_LAUNCHED_BEFORE_KEY = booleanPreferencesKey("has_launched_before")  // 首次启动引导标记
+private val LAST_BACKUP_AT_KEY = longPreferencesKey("last_backup_at")            // 上次成功备份时间戳（Step 23）
+private val BACKUP_REMINDER_ON_KEY = booleanPreferencesKey("backup_reminder_on")  // 备份提醒开关（Step 23，默认开）
+private val BACKUP_REMINDER_THRESHOLD_KEY = intPreferencesKey("backup_reminder_threshold") // 未备份提醒阈值天数（Step 23，默认 14）
 
 // 设置存储：当前持久化深色三档 + 隐私模式开关。
 // 供设置页（Step6）与主题切换复用。
@@ -102,5 +106,29 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun setHasLaunchedBefore(value: Boolean) {
         context.dataStore.edit { it[HAS_LAUNCHED_BEFORE_KEY] = value }
+    }
+
+    // 上次成功备份时间戳（Step 23）：默认 0 = 从未备份。
+    val lastBackupAtFlow: Flow<Long> = context.dataStore.data
+        .map { prefs -> prefs[LAST_BACKUP_AT_KEY] ?: 0L }
+
+    suspend fun setLastBackupAt(value: Long) {
+        context.dataStore.edit { it[LAST_BACKUP_AT_KEY] = value }
+    }
+
+    // 备份提醒开关（Step 23）：默认开。
+    val backupReminderOnFlow: Flow<Boolean> = context.dataStore.data
+        .map { prefs -> prefs[BACKUP_REMINDER_ON_KEY] ?: true }
+
+    suspend fun setBackupReminderOn(enabled: Boolean) {
+        context.dataStore.edit { it[BACKUP_REMINDER_ON_KEY] = enabled }
+    }
+
+    // 未备份提醒阈值天数（Step 23）：默认 14 天。
+    val backupReminderThresholdDaysFlow: Flow<Int> = context.dataStore.data
+        .map { prefs -> prefs[BACKUP_REMINDER_THRESHOLD_KEY] ?: 14 }
+
+    suspend fun setBackupReminderThresholdDays(days: Int) {
+        context.dataStore.edit { it[BACKUP_REMINDER_THRESHOLD_KEY] = days }
     }
 }

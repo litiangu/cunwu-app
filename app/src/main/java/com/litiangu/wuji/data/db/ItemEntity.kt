@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
 // 物品表。字段对齐《添加页面 + 物品信息表单功能》与《健康分加权模型设计草案》。
 // categoryId 可空：未分类物品 = null（删除分类时置空，不级联删物品）。
@@ -19,6 +20,7 @@ import androidx.room.PrimaryKey
     )],
     indices = [Index("categoryId")]
 )
+@Serializable
 data class ItemEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
