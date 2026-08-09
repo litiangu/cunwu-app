@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.data.settings.DarkModePref
+import com.litiangu.wuji.domain.DEFAULT_DAILY_BUDGET_ANCHOR
 import com.litiangu.wuji.data.settings.SettingsDataStore
 import com.litiangu.wuji.ui.designsystem.Haptics
 import com.litiangu.wuji.ui.theme.WujiRadius
@@ -63,17 +64,18 @@ import kotlinx.coroutines.launch
  *
  * 偏离 5.0 的有意识裁决：
  * 1. 「深色模式」保留三档分段（防退化 Step 11 已落地架构 `SettingsDataStore.darkModeFlow`）。
- * 2. 「预算锚点」改为箭头行，编辑权移交 Step 20 独立子页（保留 `SettingsViewModel.saveBudgetAnchor` API）。
+ * 2. 「预算锚点」改为箭头行，编辑权移交 Step 20 独立子页（已接入 `BudgetAnchorScreen`，经 `SettingsViewModel.saveBudgetAnchor` 落库）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit = {}) {
+fun SettingsScreen(onBack: () -> Unit = {}, onBudgetAnchor: () -> Unit = {}) {
     val context = LocalContext.current
     val settings = remember { SettingsDataStore(context) }
     val viewModel = remember { SettingsViewModel(settings) }
     val darkMode by viewModel.darkMode.collectAsStateWithLifecycle()
     val privacyMode by viewModel.privacyMode.collectAsStateWithLifecycle()
     val hapticFeedback by viewModel.hapticFeedback.collectAsStateWithLifecycle()
+    val budgetAnchor by viewModel.budgetAnchor.collectAsStateWithLifecycle(DEFAULT_DAILY_BUDGET_ANCHOR)
     val scope = rememberCoroutineScope()
 
     Scaffold(
@@ -189,8 +191,20 @@ fun SettingsScreen(onBack: () -> Unit = {}) {
                 SettingRow(
                     icon = Icons.Filled.Anchor,
                     title = "预算锚点",
-                    trailing = { Chevron() },
-                    onClick = { /* TODO Step 20：跳转预算锚点编辑子页 */ },
+                    trailing = {
+                        // 实时显示当前值（落库后自动更新）；与 Chevron 同行。
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "¥${if (budgetAnchor % 1.0 == 0.0) budgetAnchor.toLong().toString() else budgetAnchor.toString()} / 天",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.width(WujiSpace.xs))
+                            Chevron()
+                        }
+                    },
+                    onClick = onBudgetAnchor,
                 )
             }
 

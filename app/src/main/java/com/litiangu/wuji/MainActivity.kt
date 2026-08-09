@@ -31,6 +31,7 @@ import com.litiangu.wuji.ui.onboarding.OnboardingScreen
 import com.litiangu.wuji.ui.category.CategorySelectScreen
 import com.litiangu.wuji.ui.category.CustomCategoryDialog
 import com.litiangu.wuji.ui.settings.SettingsScreen
+import com.litiangu.wuji.ui.settings.BudgetAnchorScreen
 import com.litiangu.wuji.ui.theme.WujiTheme
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -82,6 +83,9 @@ fun WujiApp() {
         var preselectedCategoryId by remember { mutableStateOf<Long?>(null) }
         // 自定义分类弹窗是否显示
         var showCustomCategoryDialog by remember { mutableStateOf(false) }
+
+        // Step 20 新增：预算锚点编辑子页状态（以全屏 overlay 叠在设置页之上）。
+        var showBudgetAnchor by remember { mutableStateOf(false) }
 
         // 启动就绪闸门：WujiApplication 预热完成（数据库构建完 + 首启标记读出）后 isReady=true。
         val app = context.applicationContext as WujiApplication
@@ -199,7 +203,16 @@ fun WujiApp() {
 
             // ====== 设置页 overlay ======
             if (showSettings) {
-                SettingsScreen(onBack = { showSettings = false })
+                SettingsScreen(
+                    onBack = { showSettings = false },
+                    onBudgetAnchor = { showBudgetAnchor = true },
+                )
+            }
+
+            // ====== 预算锚点编辑子页 overlay（Step 20 新增）======
+            // 叠在设置页之上：showSettings 保持 true，返回时仅关本页，设置页原样露出。
+            if (showBudgetAnchor) {
+                BudgetAnchorScreen(onBack = { showBudgetAnchor = false })
             }
 
             // ====== 物品编辑/新增表单 overlay ======
