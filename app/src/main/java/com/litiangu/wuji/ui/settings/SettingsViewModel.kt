@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.litiangu.wuji.data.settings.DarkModePref
 import com.litiangu.wuji.data.settings.SettingsDataStore
+import com.litiangu.wuji.data.settings.UserProfileRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +36,11 @@ class SettingsViewModel(
 
     // L1 月度预算锚点（Step 21）：默认 0 = 未配置。同样用 Flow 避免输入框跳变。
     val monthlyBudgetAnchor: Flow<Double> = settings.monthlyBudgetAnchorFlow
+
+    // 用户昵称/头像：从应用启动期预热好的内存缓存取，StateFlow 首帧即为真实持久值，
+    // 避免 DataStore 异步首帧用默认值导致闪跳。
+    val userNickname: StateFlow<String> = UserProfileRepository.nickname
+    val userAvatarPath: StateFlow<String> = UserProfileRepository.avatarPath
 
     fun setDarkMode(pref: DarkModePref) {
         viewModelScope.launch { settings.setDarkMode(pref) }

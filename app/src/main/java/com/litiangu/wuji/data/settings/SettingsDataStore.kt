@@ -48,6 +48,8 @@ private val HAS_LAUNCHED_BEFORE_KEY = booleanPreferencesKey("has_launched_before
 private val LAST_BACKUP_AT_KEY = longPreferencesKey("last_backup_at")            // 上次成功备份时间戳（Step 23）
 private val BACKUP_REMINDER_ON_KEY = booleanPreferencesKey("backup_reminder_on")  // 备份提醒开关（Step 23，默认开）
 private val BACKUP_REMINDER_THRESHOLD_KEY = intPreferencesKey("backup_reminder_threshold") // 未备份提醒阈值天数（Step 23，默认 14）
+private val USER_NICKNAME_KEY = stringPreferencesKey("user_nickname")   // 用户昵称（Step 25，默认「本地用户」）
+private val USER_AVATAR_PATH_KEY = stringPreferencesKey("user_avatar_path") // 用户头像本地路径（Step 25，空 = 默认图标）
 
 // 设置存储：当前持久化深色三档 + 隐私模式开关。
 // 供设置页（Step6）与主题切换复用。
@@ -130,5 +132,21 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun setBackupReminderThresholdDays(days: Int) {
         context.dataStore.edit { it[BACKUP_REMINDER_THRESHOLD_KEY] = days }
+    }
+
+    // 用户昵称（Step 25）：默认「本地用户」。
+    val userNicknameFlow: Flow<String> = context.dataStore.data
+        .map { prefs -> prefs[USER_NICKNAME_KEY] ?: "本地用户" }
+
+    suspend fun setUserNickname(value: String) {
+        context.dataStore.edit { it[USER_NICKNAME_KEY] = value }
+    }
+
+    // 用户头像本地路径（Step 25）：空字符串 = 使用默认 AccountCircle 图标。
+    val userAvatarPathFlow: Flow<String> = context.dataStore.data
+        .map { prefs -> prefs[USER_AVATAR_PATH_KEY] ?: "" }
+
+    suspend fun setUserAvatarPath(value: String) {
+        context.dataStore.edit { it[USER_AVATAR_PATH_KEY] = value }
     }
 }

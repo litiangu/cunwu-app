@@ -4,6 +4,7 @@ import android.app.Application
 import com.litiangu.wuji.data.db.WujiDatabase
 import com.litiangu.wuji.data.db.WujiDatabaseProvider
 import com.litiangu.wuji.data.settings.SettingsDataStore
+import com.litiangu.wuji.data.settings.UserProfileRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +35,7 @@ class WujiApplication : Application() {
             WujiDatabaseProvider.get(this@WujiApplication)        // 构建数据库（阻塞至建完）
             launchedBefore =
                 SettingsDataStore(this@WujiApplication).hasLaunchedBeforeFlow.first()
+            UserProfileRepository.init(this@WujiApplication)       // 预热昵称/头像内存缓存
             _isReady.value = true
         }
     }

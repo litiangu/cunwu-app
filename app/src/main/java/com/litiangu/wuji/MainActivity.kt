@@ -32,6 +32,7 @@ import com.litiangu.wuji.ui.category.CategorySelectScreen
 import com.litiangu.wuji.ui.category.CustomCategoryDialog
 import com.litiangu.wuji.ui.settings.SettingsScreen
 import com.litiangu.wuji.ui.settings.BudgetAnchorScreen
+import com.litiangu.wuji.ui.settings.ProfileEditScreen
 import com.litiangu.wuji.ui.settings.TrashScreen
 import com.litiangu.wuji.ui.settings.BackupScreen
 import com.litiangu.wuji.ui.settings.AboutScreen
@@ -99,6 +100,9 @@ fun WujiApp() {
 
         // Step 24 新增：关于页状态（以全屏 overlay 叠在设置页之上）。
         var showAbout by remember { mutableStateOf(false) }
+
+        // Step 25 新增：用户信息编辑（昵称+头像）页状态（以全屏 overlay 叠在设置页之上）。
+        var showProfileEdit by remember { mutableStateOf(false) }
 
         // 启动就绪闸门：WujiApplication 预热完成（数据库构建完 + 首启标记读出）后 isReady=true。
         val app = context.applicationContext as WujiApplication
@@ -222,6 +226,7 @@ fun WujiApp() {
                     onTrash = { showTrash = true },
                     onBackup = { showBackup = true },
                     onAbout = { showAbout = true },
+                    onProfileEdit = { showProfileEdit = true },
                 )
             }
 
@@ -249,6 +254,12 @@ fun WujiApp() {
             // 叠在设置页之上：showSettings 保持 true，返回时仅关本页，设置页原样露出。
             if (showAbout) {
                 AboutScreen(onBack = { showAbout = false })
+            }
+
+            // ====== 用户信息编辑页 overlay（Step 25 新增）======
+            // 叠在设置页之上：showSettings 保持 true，返回时仅关本页，设置页原样露出。
+            if (showProfileEdit) {
+                ProfileEditScreen(onBack = { showProfileEdit = false })
             }
 
             // ====== 预算锚点编辑子页 overlay（Step 20 新增，Step 21 增强）======

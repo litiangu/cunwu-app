@@ -2,6 +2,7 @@ package com.litiangu.wuji.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -30,7 +31,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -41,6 +45,8 @@ import com.litiangu.wuji.data.settings.DarkModePref
 import com.litiangu.wuji.domain.DEFAULT_DAILY_BUDGET_ANCHOR
 import com.litiangu.wuji.data.settings.SettingsDataStore
 import com.litiangu.wuji.ui.designsystem.Haptics
+import com.litiangu.wuji.ui.item.decodeImagePath
+import com.litiangu.wuji.ui.item.decodeImagePath
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
 import kotlinx.coroutines.launch
@@ -74,6 +80,7 @@ fun SettingsScreen(
     onTrash: () -> Unit = {},
     onBackup: () -> Unit = {},
     onAbout: () -> Unit = {},
+    onProfileEdit: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val settings = remember { SettingsDataStore(context) }
@@ -82,6 +89,11 @@ fun SettingsScreen(
     val privacyMode by viewModel.privacyMode.collectAsStateWithLifecycle()
     val hapticFeedback by viewModel.hapticFeedback.collectAsStateWithLifecycle()
     val budgetAnchor by viewModel.budgetAnchor.collectAsStateWithLifecycle(DEFAULT_DAILY_BUDGET_ANCHOR)
+    // Step 25：资料区昵称/头像实时回显。
+    // UserProfileRepository 在应用启动期已预热，StateFlow 首帧即为 DataStore 真实值，
+    // 无需 loading、无默认闪跳。
+    val userNickname by viewModel.userNickname.collectAsStateWithLifecycle()
+    val userAvatarPath by viewModel.userAvatarPath.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     Scaffold(
@@ -141,7 +153,11 @@ fun SettingsScreen(
                 .padding(horizontal = 20.dp),
         ) {
             Spacer(Modifier.height(WujiSpace.sm))
-            ProfileSection(onEdit = { /* TODO Step 25：进入用户信息编辑子页 */ })
+            ProfileSection(
+                nickname = userNickname,
+                avatarPath = userAvatarPath,
+                onEdit = onProfileEdit,
+            )
 
             Spacer(Modifier.height(WujiSpace.md))
             SectionLabel("偏好")
@@ -242,9 +258,14 @@ fun SettingsScreen(
     }
 }
 
-/** 资料区：80dp 灰圆头像 + 灰色人形 + 右下橙色编辑角标 + 大字昵称 + 小字副标。 */
+/** 资料区：80dp 头像（默认图标或用户图圆形裁切）+ 右下橙色编辑角标 + 大字昵称 + 小字副标。 */
 @Composable
-private fun ProfileSection(onEdit: () -> Unit) {
+private fun ProfileSection(
+    nickname: String,
+    avatarPath: String,
+    onEdit: () -> Unit,
+) {
+    val avatarBitmap = remember(avatarPath) { decodeImagePath(avatarPath) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -260,12 +281,22 @@ private fun ProfileSection(onEdit: () -> Unit) {
                     .background(MaterialTheme.colorScheme.surfaceContainer),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    Icons.Filled.AccountCircle,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(56.dp),
-                )
+                if (avatarBitmap != null) {
+                    // 用户自定义头像：圆形裁切展示
+                    Image(
+                        bitmap = avatarBitmap.asImageBitmap(),
+                        contentDescription = "用户头像",
+                        modifier = Modifier.matchParentSize().clip(CircleShape),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Icon(
+                        Icons.Filled.AccountCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(56.dp),
+                    )
+                }
             }
             // 右下角橙色编辑角标（叠在头像上）
             Box(
@@ -288,7 +319,7 @@ private fun ProfileSection(onEdit: () -> Unit) {
         Column(modifier = Modifier.weight(1f)) {
             // headline-md：Manrope 20sp / 600（DESIGN.md typography.headline-md）
             Text(
-                text = "本地用户",
+                text = nickname.ifBlank { "本地用户" },
                 fontSize = 20.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
