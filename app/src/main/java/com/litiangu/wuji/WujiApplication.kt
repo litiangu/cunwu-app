@@ -3,6 +3,7 @@ package com.litiangu.wuji
 import android.app.Application
 import com.litiangu.wuji.data.db.WujiDatabase
 import com.litiangu.wuji.data.db.WujiDatabaseProvider
+import com.litiangu.wuji.data.settings.BackupRepository
 import com.litiangu.wuji.data.settings.BudgetAnchorRepository
 import com.litiangu.wuji.data.settings.SettingsDataStore
 import com.litiangu.wuji.data.settings.UserProfileRepository
@@ -38,6 +39,7 @@ class WujiApplication : Application() {
                 SettingsDataStore(this@WujiApplication).hasLaunchedBeforeFlow.first()
             UserProfileRepository.init(this@WujiApplication)       // 预热昵称/头像内存缓存
             BudgetAnchorRepository.init(this@WujiApplication, database)  // 预热预算锚点内存缓存
+            BackupRepository.init(this@WujiApplication)            // 预热数据备份内存缓存
             _isReady.value = true
         }
     }

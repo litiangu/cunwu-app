@@ -27,6 +27,9 @@ import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
+import com.litiangu.wuji.data.settings.BackupFileInfo
+import com.litiangu.wuji.data.settings.BackupRepository
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,9 +50,7 @@ import com.litiangu.wuji.data.db.WujiDatabaseProvider
 import com.litiangu.wuji.data.settings.SettingsDataStore
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -80,19 +81,15 @@ fun BackupScreen(
     val viewModel = remember { BackupViewModel(db, settings) }
 
     var isBusy by remember { mutableStateOf(false) }
-    // 列表刷新计数：创建/删除后 +1 触发重新列举。
-    var listVersion by remember { mutableStateOf(0) }
     // 备份行 more_vert 菜单：锚点坐标（boundsInWindow）+ 当前打开的备份项。
     var backupMenuAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     var backupMenuInfo by remember { mutableStateOf<BackupFileInfo?>(null) }
-    val backups by produceState(initialValue = emptyList<BackupFileInfo>(), key1 = listVersion) {
-        value = withContext(Dispatchers.IO) { viewModel.listBackups(context) }
-    }
 
-    // 设置流：提醒开关 / 阈值 / 上次备份时间。
-    val reminderOn by settings.backupReminderOnFlow.collectAsState(initial = true)
-    val threshold by settings.backupReminderThresholdDaysFlow.collectAsState(initial = 14)
-    val lastBackupAt by settings.lastBackupAtFlow.collectAsState(initial = 0L)
+    // 首帧即真实值：直接读预热好的内存缓存 StateFlow，无默认占位、无闪跳。
+    val reminderOn by BackupRepository.reminderOn.collectAsStateWithLifecycle()
+    val threshold by BackupRepository.threshold.collectAsStateWithLifecycle()
+    val lastBackupAt by BackupRepository.lastBackupAt.collectAsStateWithLifecycle()
+    val backups by BackupRepository.backups.collectAsStateWithLifecycle()
     val lastBackupText = remember(lastBackupAt) {
         if (lastBackupAt == 0L) "从未备份"
         else {
@@ -263,7 +260,7 @@ fun BackupScreen(
                             val r = viewModel.createBackup(context)
                             isBusy = false
                             r.onSuccess {
-                                listVersion++
+                                BackupRepository.refreshBackups()
                                 snack("已创建备份：${it.name}")
                             }.onFailure { snack("创建失败：${it.message ?: "未知错误"}") }
                         }
@@ -417,6 +414,7 @@ fun BackupScreen(
                             }
                             isBusy = false
                             r.onSuccess { s ->
+                                BackupRepository.refreshBackups()
                                 snack(
                                     "已还原 ${s.items} 件物品 / ${s.categories} 个分类" +
                                         (if (s.trash > 0) " / ${s.trash} 条回收站" else "")
@@ -424,8 +422,7 @@ fun BackupScreen(
                             }.onFailure { snack("还原失败：${it.message ?: "未知错误"}") }
                         }
                     },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) { Text("覆盖还原") }
+                ) { Text("确定") }
             },
             dismissButton = {
                 TextButton(onClick = {
@@ -468,8 +465,10 @@ fun BackupScreen(
                         pendingDeleteFile = null
                         scope.launch {
                             val r = viewModel.deleteBackup(backupFile(info))
-                            r.onSuccess { listVersion++; snack("已删除备份") }
-                                .onFailure { snack("删除失败：${it.message ?: "未知错误"}") }
+                            r.onSuccess {
+                                BackupRepository.refreshBackups()
+                                snack("已删除备份")
+                            }.onFailure { snack("删除失败：${it.message ?: "未知错误"}") }
                         }
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),

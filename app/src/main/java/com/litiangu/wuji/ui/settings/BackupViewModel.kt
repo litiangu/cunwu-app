@@ -13,6 +13,7 @@ import com.litiangu.wuji.data.db.CategoryEntity
 import com.litiangu.wuji.data.db.ItemEntity
 import com.litiangu.wuji.data.db.TrashEntity
 import com.litiangu.wuji.data.db.WujiDatabase
+import com.litiangu.wuji.data.settings.BackupFileInfo
 import com.litiangu.wuji.data.settings.DarkModePref
 import com.litiangu.wuji.data.settings.SettingsDataStore
 import kotlinx.coroutines.Dispatchers
@@ -78,13 +79,6 @@ data class BackupPayload(
     val categoryBudgets: List<CategoryBudgetEntity>,
     val trash: List<TrashEntity>,
     val settings: BackupSettings,
-)
-
-/** 本地备份列表项（不序列化）。 */
-data class BackupFileInfo(
-    val name: String,
-    val lastModified: Long,
-    val size: Long,
 )
 
 /** 导入结果摘要（仅用于 UI 回显，不序列化）。 */
@@ -189,16 +183,6 @@ class BackupViewModel(
     // endregion
 
     // region 列表 / 删除 / 分享 / 保存
-
-    /** 列出本地备份（按修改时间倒序）。 */
-    suspend fun listBackups(context: Context): List<BackupFileInfo> = withContext(Dispatchers.IO) {
-        val dir = backupDir(context)
-        if (!dir.exists()) return@withContext emptyList()
-        dir.listFiles { f -> f.extension.equals("zip", ignoreCase = true) }
-            ?.map { BackupFileInfo(it.name, it.lastModified(), it.length()) }
-            ?.sortedByDescending { it.lastModified }
-            ?: emptyList()
-    }
 
     /** 删除本地备份文件。 */
     suspend fun deleteBackup(file: File): Result<Unit> = withContext(Dispatchers.IO) {

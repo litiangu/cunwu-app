@@ -13,11 +13,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Anchor
-import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.SettingsBrightness
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -234,7 +234,7 @@ fun SettingsScreen(
             SectionLabel("数据与账户")
             CardGroup {
                 SettingRow(
-                    icon = Icons.Filled.CloudUpload,
+                    icon = Icons.Filled.SettingsBackupRestore,
                     title = "数据备份",
                     trailing = { Chevron() },
                     onClick = onBackup,
