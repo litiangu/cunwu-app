@@ -141,6 +141,7 @@ fun WujiApp() {
                     },
                     onSetting = { showSettings = true },
                     onEdit = { showEdit = it },
+                    onBackup = { showBackup = true },
                 )
             }
 

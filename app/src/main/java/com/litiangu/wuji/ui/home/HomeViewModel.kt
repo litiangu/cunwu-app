@@ -94,6 +94,13 @@ class HomeViewModel(
     val privacyMode = settings.privacyModeFlow
     val darkMode = settings.darkModeFlow
 
+    // Step 29：首页备份阈值提示所需的三流（复用于首页 banner）。
+    // 直接暴露原始 Flow，照搬 privacyMode 套路（不在 VM 内塞默认 StateFlow），
+    // 由 HomeScreen 收集时用默认值闸门，避免首帧横幅闪现。
+    val lastBackupAt = settings.lastBackupAtFlow          // 上次成功备份时间戳（0 = 从未）
+    val backupReminderOn = settings.backupReminderOnFlow  // 备份提醒开关（默认开）
+    val backupReminderThresholdDays = settings.backupReminderThresholdDaysFlow  // 阈值天数（默认 14）
+
     fun togglePrivacyMode() {
         viewModelScope.launch {
             val current = settings.privacyModeFlow.first()

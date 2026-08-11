@@ -20,11 +20,13 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -46,6 +48,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import com.litiangu.wuji.ui.designsystem.BottomPillBar
 import com.litiangu.wuji.ui.designsystem.BottomTab
 import com.litiangu.wuji.ui.designsystem.CircleIconButton
@@ -54,6 +57,16 @@ import com.litiangu.wuji.ui.onboarding.AppSplash
 import com.litiangu.wuji.ui.theme.BrandOrange
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
+
+/**
+ * 首页常量：一天毫秒数（Step 29 备份阈值天数换算用）。
+ */
+private const val DAY_MS = 86_400_000L
+
+/**
+ * 首页备份提示行自动消失时长（Step 29）：超期提示显示后停留 30s 自动消失，本会话不再打扰。
+ */
+private const val BACKUP_REMINDER_AUTO_HIDE_MS = 30_000L
 
 /**
  * 首页：与 `stitch_app_settings_page_redesign/3.0应用主页-显示添加物品后的页面/screen.png` 1:1 对齐。
@@ -78,6 +91,7 @@ fun HomeScreen(
     onNew: () -> Unit = {},
     onSetting: () -> Unit = {},
     onEdit: (Long) -> Unit = {},
+    onBackup: () -> Unit = {},
 ) {
     val items by viewModel.items.collectAsStateWithLifecycle(emptyList())
     val itemsLoaded by viewModel.itemsLoaded.collectAsStateWithLifecycle(false)
@@ -91,6 +105,40 @@ fun HomeScreen(
     val statusFilter by viewModel.statusFilter.collectAsStateWithLifecycle(emptySet())
     // 隐私模式：开关在设置页，存储于同一 DataStore；此处收集后透传给各金额渲染处做脱敏。
     val privacyMasked by viewModel.privacyMode.collectAsStateWithLifecycle(false)
+
+    // Step 29：备份阈值提示。三流默认初值取与 DataStore 一致语义；
+    // reminderOn 默认 false，配合下方 itemsLoaded 闸门，杜绝首帧横幅「显示→消失」闪现。
+    val lastBackupAt by viewModel.lastBackupAt.collectAsStateWithLifecycle(0L)
+    val backupReminderOn by viewModel.backupReminderOn.collectAsStateWithLifecycle(false)
+    val backupReminderThresholdDays by viewModel.backupReminderThresholdDays.collectAsStateWithLifecycle(14)
+
+    // 是否「该提示」：开关开 且（从未备份 或 距上次备份天数 > 阈值）。
+    // 每次进入首页（HomeScreen 合成）若满足即显示，停留 30s 自动消失，本会话内不再打扰；
+    // 用户主动点 X / 点横幅也会立即隐藏。不做「每日一次」持久抑制——只要仍超期，下次打开应用重新提示。
+    val daysSince = if (lastBackupAt > 0L) {
+        (System.currentTimeMillis() - lastBackupAt) / DAY_MS
+    } else 0L
+    val reminderDue = remember(
+        backupReminderOn, lastBackupAt, backupReminderThresholdDays, itemsLoaded, daysSince
+    ) {
+        if (!itemsLoaded || !backupReminderOn) false
+        else (lastBackupAt == 0L || daysSince > backupReminderThresholdDays)
+    }
+    var bannerVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(reminderDue) {
+        if (reminderDue) {
+            bannerVisible = true
+            delay(BACKUP_REMINDER_AUTO_HIDE_MS) // 30s 后自动消失，本会话不再提示
+            bannerVisible = false
+        } else {
+            bannerVisible = false
+        }
+    }
+    val backupReminderText = remember(reminderDue, lastBackupAt, daysSince) {
+        if (!reminderDue) null
+        else if (lastBackupAt == 0L) "尚未备份数据，建议立即备份"
+        else "已 ${daysSince} 天未备份，建议立即备份"
+    }
 
     val overview = remember(items) { items.toOverview() }
 
@@ -250,7 +298,20 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
                 item { HomeOverview(overview = overview, privacyMasked = privacyMasked) }
-                item { Spacer(Modifier.height(WujiSpace.md)) }
+                item {
+                    if (bannerVisible && backupReminderText != null) {
+                        Spacer(Modifier.height(WujiSpace.md))
+                        BackupReminderBanner(
+                            text = backupReminderText,
+                            onClick = {
+                                bannerVisible = false
+                                onBackup()
+                            },
+                            onDismiss = { bannerVisible = false },
+                        )
+                        Spacer(Modifier.height(WujiSpace.md))
+                    }
+                }
                 item {
                     CategoryFilterBar(
                         categories = categories,
@@ -321,7 +382,18 @@ fun HomeScreen(
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         HomeOverview(overview = overview, privacyMasked = privacyMasked)
-                        Spacer(Modifier.height(WujiSpace.md))
+                        if (bannerVisible && backupReminderText != null) {
+                            Spacer(Modifier.height(WujiSpace.md))
+                            BackupReminderBanner(
+                                text = backupReminderText,
+                                onClick = {
+                                    bannerVisible = false
+                                    onBackup()
+                                },
+                                onDismiss = { bannerVisible = false },
+                            )
+                            Spacer(Modifier.height(WujiSpace.md))
+                        }
                         CategoryFilterBar(
                             categories = categories,
                             selected = selectedColorKey,
@@ -562,6 +634,67 @@ private fun ViewModeMenuRow(
             fontWeight = FontWeight.Medium,
             color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * 首页备份阈值提示行（Step 29）：
+ * 开关开且超期时出现；点击左侧区域跳备份页，点击 X 仅关闭今日提示。
+ * 不用 surfaceContainerLowest + 阴影，避免与上方资产概览卡视觉重叠；
+ * 改用 surfaceContainerLow  flat 条，语义上是提示行而不是又一张概览卡。
+ */
+@Composable
+private fun BackupReminderBanner(
+    text: String,
+    onClick: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(WujiRadius.cardLg))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(horizontal = WujiSpace.md, vertical = WujiSpace.md),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // 左侧：图标 + 文案，整片可点击进入备份页。
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onClick),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.SettingsBackupRestore,
+                    contentDescription = null,
+                    tint = BrandOrange,
+                    modifier = Modifier.size(22.dp),
+                )
+                Spacer(Modifier.width(WujiSpace.md))
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            // 右侧：单独关闭今日提示。
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "关闭今日备份提醒",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
     }
 }
 
