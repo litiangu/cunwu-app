@@ -75,6 +75,12 @@ class AnalysisViewModel(
         buildState(items, categories, anchor, monthly, budgets)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AnalysisUiState())
 
+    // 隐私模式：开关在设置页，存储于同一 DataStore。分析页收集后透传给金额渲染处做脱敏。
+    // 与首页 HomeScreen 同款接法（默认 false = 不脱敏）。
+    val privacyMode: StateFlow<Boolean> = settings.privacyModeFlow.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), false
+    )
+
     private fun buildState(
         items: List<ItemEntity>,
         categories: List<CategoryEntity>,

@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.data.db.WujiDatabaseProvider
 import com.litiangu.wuji.data.settings.SettingsDataStore
+import com.litiangu.wuji.ui.home.PRIVACY_MASK
 import com.litiangu.wuji.ui.theme.GradeExcellentLight
 import com.litiangu.wuji.ui.theme.GradeFairLight
 import com.litiangu.wuji.ui.theme.GradeGoodLight
@@ -75,6 +76,8 @@ fun AnalysisScreen(
         )
     }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // 隐私模式：收集后透传给金额渲染处做脱敏。默认 false = 不脱敏。
+    val privacyMasked by viewModel.privacyMode.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -105,8 +108,8 @@ fun AnalysisScreen(
             }
 
             HealthCard(state)
-            AssetsCard(state)
-            BudgetCard(state)
+            AssetsCard(state, privacyMasked)
+            BudgetCard(state, privacyMasked)
             CategoryDistributionCard(state)
             TrendCard(state)
         }
@@ -234,7 +237,7 @@ private fun DimensionBar(label: String, value: Double, barColor: Color) {
 // ===== 预算遵从卡（Step 21）：全局月度比对 + 分类限额高亮 =====
 // 仅当「全局月度预算已配置」或「存在分类限额」时渲染，护住零配置中性（不污染健康分、不弹无意义预警）。
 @Composable
-private fun BudgetCard(state: AnalysisUiState) {
+private fun BudgetCard(state: AnalysisUiState, privacyMasked: Boolean = false) {
     val visible = state.monthlyBudget > 0 || state.categoryBudgetRows.isNotEmpty()
     if (!visible) return
 
@@ -251,12 +254,12 @@ private fun BudgetCard(state: AnalysisUiState) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        "本月支出 ${formatYuan(state.recentSpend30)}",
+                        "本月支出 ${if (privacyMasked) PRIVACY_MASK else formatYuan(state.recentSpend30)}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        "预算 ${formatYuan(state.monthlyBudget)}",
+                        "预算 ${if (privacyMasked) PRIVACY_MASK else formatYuan(state.monthlyBudget)}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -302,7 +305,7 @@ private fun BudgetCard(state: AnalysisUiState) {
                             color = if (row.over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            "${formatYuan(row.spend)} / ${formatYuan(row.limit)}",
+                            "${if (privacyMasked) PRIVACY_MASK else formatYuan(row.spend)} / ${if (privacyMasked) PRIVACY_MASK else formatYuan(row.limit)}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = if (row.over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = if (row.over) FontWeight.SemiBold else FontWeight.Normal
@@ -316,15 +319,26 @@ private fun BudgetCard(state: AnalysisUiState) {
 
 // ===== 资产结构卡：总投入 / 已变现 / 净持有 =====
 @Composable
-private fun AssetsCard(state: AnalysisUiState) {
+private fun AssetsCard(state: AnalysisUiState, privacyMasked: Boolean = false) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("资产结构", style = MaterialTheme.typography.titleMedium)
-            AssetRow("总投入", formatYuan(state.totalInput))
-            AssetRow("已变现", formatYuan(state.totalRecovery))
-            AssetRow("净持有", formatYuan(state.netHolding))
+            // 隐私模式开启时金额统一替换为脱敏占位符，标签（总投入等）保留。
+            AssetRow(
+                "总投入",
+                if (privacyMasked) PRIVACY_MASK else formatYuan(state.totalInput)
+            )
+            AssetRow(
+                "已变现",
+                if (privacyMasked) PRIVACY_MASK else formatYuan(state.totalRecovery)
+            )
+            AssetRow(
+                "净持有",
+                if (privacyMasked) PRIVACY_MASK else formatYuan(state.netHolding)
+            )
+            // 回收比是金额衍生指标，隐私模式下一并隐藏为占位符。
             Text(
-                "回收比 ${if (state.totalInput > 0) (state.totalRecovery / state.totalInput * 100).roundToInt() else 0}%",
+                "回收比 ${if (privacyMasked) PRIVACY_MASK else "${if (state.totalInput > 0) (state.totalRecovery / state.totalInput * 100).roundToInt() else 0}%"}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
