@@ -149,4 +149,5 @@ class SettingsDataStore(private val context: Context) {
     suspend fun setUserAvatarPath(value: String) {
         context.dataStore.edit { it[USER_AVATAR_PATH_KEY] = value }
     }
+
 }

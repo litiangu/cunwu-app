@@ -10,10 +10,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,7 +50,9 @@ import java.util.Locale
  * - 永久删除与全部清空均弹确认框，强调「不可恢复」。
  *
  * 导航沿用 MainActivity 的布尔状态机（showTrash），以全屏 overlay 叠在设置页之上；
- * 返回时仅关闭本页，设置页原样露出。本步严格不跨步：30 天自动清理 UI / 数据备份留给后续。
+ * 返回时仅关闭本页，设置页原样露出。
+ * Step 30：进入本页时按 30 天规则自动清理过期项（先删图再删 DB 行），顶部显示说明条，
+ * 每行附剩余天数。严格不跨步：备份/还原逻辑未动。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +65,12 @@ fun TrashScreen(
     // 首帧即真实值：直接读预热好的内存缓存 StateFlow，无默认占位、无加载圈（对齐 Step 25 系列修复）。
     val items by TrashRepository.items.collectAsStateWithLifecycle()
     val categories by TrashRepository.categories.collectAsStateWithLifecycle()
+
+    // Step 30：进入回收站即触发一次 30 天自动清理（幂等；重复进入无害）。
+    // 超过 30 天的项先删私有图文件再清 DB 行；purge 后 TrashRepository 后台订阅推送新列表，UI 自动移除。
+    LaunchedEffect(Unit) {
+        viewModel.purgeExpired()
+    }
 
     // 确认弹窗状态机：分别处理「永久删除单个」与「全部清空」两种不可逆操作。
     var confirmTarget by remember { mutableStateOf<TrashEntity?>(null) }
@@ -123,6 +133,9 @@ fun TrashScreen(
                 .fillMaxSize()
                 .padding(horizontal = 20.dp),
         ) {
+            // Step 30：顶部平铺说明条（flat，非卡片），告知用户 30 天清理规则。
+            AutoPurgeNotice()
+            Spacer(Modifier.height(WujiSpace.md))
             if (items.isEmpty()) {
                 // 空库：空态提示（首帧即真实，无加载圈）。
                 EmptyTrash()
@@ -168,7 +181,7 @@ fun TrashScreen(
                     ),
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.DeleteSweep,
+                        imageVector = Icons.Filled.Delete,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
@@ -259,7 +272,7 @@ private fun EmptyTrash() {
 }
 
 /**
- * 回收站单行：左侧缩略图（无图回退分类图标圈）+ 名称 + 删除日期 + 右侧「恢复 / 永久删除」。
+ * 回收站单行：左侧缩略图（无图回退分类图标圈）+ 名称 + 删除日期（附 30 天剩余天数）+ 右侧「恢复 / 永久删除」。
  * 缩略图优先原图，无原图回退抠图 PNG；透明 PNG 用 Fit 避免留白。
  */
 @Composable
@@ -271,6 +284,11 @@ private fun TrashRow(
 ) {
     val visual = categoryVisual(colorKey)
     val bitmap = decodeImagePath(entity.imagePath ?: entity.croppedImagePath)
+    // Step 30：固定 30 天清理，算剩余天数（删于 deletedAt，过 30 天清理）。
+    val remainingText = run {
+        val remain = ((entity.deletedAt + 30 * DAY_MS - System.currentTimeMillis()) / DAY_MS).toInt()
+        if (remain <= 0) "即将清理" else "还剩 ${remain} 天"
+    }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -327,7 +345,10 @@ private fun TrashRow(
                 )
                 Spacer(Modifier.height(WujiSpace.xs))
                 Text(
-                    text = "删除于 ${formatDeletedDate(entity.deletedAt)}",
+                    text = buildString {
+                        append("删除于 ${formatDeletedDate(entity.deletedAt)}")
+                        if (remainingText != null) append(" · $remainingText")
+                    },
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -363,7 +384,42 @@ private fun TrashRow(
     }
 }
 
+private const val DAY_MS = 86_400_000L
+
 private val trashDateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA)
 
 private fun formatDeletedDate(epochMillis: Long): String =
     trashDateFormatter.format(Date(epochMillis))
+
+/**
+ * Step 30：顶部自动清理说明条。平铺（surfaceContainerLow，非卡片），与首页备份提示条同款层级语义。
+ * 告知用户超过 30 天的物品会在打开回收站时被自动清理。
+ */
+@Composable
+private fun AutoPurgeNotice(days: Int = 30) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(WujiRadius.md),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(WujiSpace.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Schedule,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(WujiSpace.sm))
+            Text(
+                text = "超过 $days 天的物品将被自动清理",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
