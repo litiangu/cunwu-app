@@ -2,8 +2,6 @@ package com.litiangu.wuji.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.litiangu.wuji.data.db.CategoryDao
-import com.litiangu.wuji.data.db.CategoryEntity
 import com.litiangu.wuji.data.db.ItemDao
 import com.litiangu.wuji.data.db.TrashDao
 import com.litiangu.wuji.data.db.TrashEntity
@@ -25,7 +23,6 @@ import kotlinx.coroutines.launch
 class TrashViewModel(
     private val itemDao: ItemDao,
     private val trashDao: TrashDao,
-    private val categoryDao: CategoryDao,
 ) : ViewModel() {
 
     // 恢复：先回物品表（沿用 originalId），再删回收站快照。

@@ -239,7 +239,6 @@ fun WujiApp() {
                     onBack = { showTrash = false },
                     itemDao = db.itemDao(),
                     trashDao = db.trashDao(),
-                    categoryDao = db.categoryDao(),
                 )
             }
 

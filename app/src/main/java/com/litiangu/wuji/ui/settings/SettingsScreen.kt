@@ -46,7 +46,6 @@ import com.litiangu.wuji.domain.DEFAULT_DAILY_BUDGET_ANCHOR
 import com.litiangu.wuji.data.settings.SettingsDataStore
 import com.litiangu.wuji.ui.designsystem.Haptics
 import com.litiangu.wuji.ui.item.decodeImagePath
-import com.litiangu.wuji.ui.item.decodeImagePath
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
 import kotlinx.coroutines.launch

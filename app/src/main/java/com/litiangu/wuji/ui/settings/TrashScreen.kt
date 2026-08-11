@@ -27,7 +27,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.litiangu.wuji.data.db.CategoryDao
 import com.litiangu.wuji.data.db.ItemDao
 import com.litiangu.wuji.data.db.TrashDao
 import com.litiangu.wuji.data.db.TrashEntity
@@ -57,9 +56,8 @@ fun TrashScreen(
     onBack: () -> Unit = {},
     itemDao: ItemDao,
     trashDao: TrashDao,
-    categoryDao: CategoryDao,
 ) {
-    val viewModel = remember { TrashViewModel(itemDao, trashDao, categoryDao) }
+    val viewModel = remember { TrashViewModel(itemDao, trashDao) }
     // 首帧即真实值：直接读预热好的内存缓存 StateFlow，无默认占位、无加载圈（对齐 Step 25 系列修复）。
     val items by TrashRepository.items.collectAsStateWithLifecycle()
     val categories by TrashRepository.categories.collectAsStateWithLifecycle()
