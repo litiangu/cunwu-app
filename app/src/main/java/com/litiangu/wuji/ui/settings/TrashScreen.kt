@@ -16,7 +16,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -32,6 +31,7 @@ import com.litiangu.wuji.data.db.CategoryDao
 import com.litiangu.wuji.data.db.ItemDao
 import com.litiangu.wuji.data.db.TrashDao
 import com.litiangu.wuji.data.db.TrashEntity
+import com.litiangu.wuji.data.db.TrashRepository
 import com.litiangu.wuji.ui.designsystem.categoryVisual
 import com.litiangu.wuji.ui.item.decodeImagePath
 import com.litiangu.wuji.ui.theme.WujiRadius
@@ -60,14 +60,9 @@ fun TrashScreen(
     categoryDao: CategoryDao,
 ) {
     val viewModel = remember { TrashViewModel(itemDao, trashDao, categoryDao) }
-    val items by viewModel.items.collectAsStateWithLifecycle(emptyList())
-    val categories by viewModel.categories.collectAsStateWithLifecycle(emptyList())
-
-    // 首帧发射门控：Room 首查前 items 为空，用 firstEmit 区分「加载中」与「真·空库」，
-    // 避免空列表/空态在首帧闪现（遵循 NextStep §4 第 28 条）。
-    val firstEmit by produceState(false) {
-        viewModel.items.collect { value = true }
-    }
+    // 首帧即真实值：直接读预热好的内存缓存 StateFlow，无默认占位、无加载圈（对齐 Step 25 系列修复）。
+    val items by TrashRepository.items.collectAsStateWithLifecycle()
+    val categories by TrashRepository.categories.collectAsStateWithLifecycle()
 
     // 确认弹窗状态机：分别处理「永久删除单个」与「全部清空」两种不可逆操作。
     var confirmTarget by remember { mutableStateOf<TrashEntity?>(null) }
@@ -130,37 +125,11 @@ fun TrashScreen(
                 .fillMaxSize()
                 .padding(horizontal = 20.dp),
         ) {
-            if (!firstEmit) {
-                // 首帧（Room 尚未首查）显示加载圈，避免空态闪现。
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            } else if (items.isEmpty()) {
-                // 真·空库：空态提示。
+            if (items.isEmpty()) {
+                // 空库：空态提示（首帧即真实，无加载圈）。
                 EmptyTrash()
             } else {
-                // 非空：顶部「全部清空」+ 列表。整体用 AnimatedVisibility 防止首帧空列表裸现（§4 第 28 条）。
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    TextButton(
-                        onClick = { confirmClear = true },
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error,
-                        ),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.DeleteSweep,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(WujiSpace.xs))
-                        Text(text = "全部清空", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
-                Spacer(Modifier.height(WujiSpace.sm))
-
+                // 非空：列表（「全部清空」移到页面底部固定按钮，参考编辑资料页底部保存按钮）。
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(WujiSpace.sm),
@@ -173,8 +142,40 @@ fun TrashScreen(
                             onDelete = { confirmTarget = entity },
                         )
                     }
-                    // 底部留白，避免最后一行贴底。
-                    item { Spacer(Modifier.height(WujiSpace.xl)) }
+                    // 底部留白，避免最后一行被底部按钮遮挡。
+                    item { Spacer(Modifier.height(96.dp)) }
+                }
+            }
+        }
+
+        // 底部固定「全部清空」按钮（参考编辑资料页底部保存按钮样式；不可恢复操作，用 error 色警示）。
+        // 仅在有内容时显示，空库不显示（无可清项）。
+        if (items.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                Button(
+                    onClick = { confirmClear = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(WujiRadius.md),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.DeleteSweep,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(WujiSpace.xs))
+                    Text(text = "全部清空", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
