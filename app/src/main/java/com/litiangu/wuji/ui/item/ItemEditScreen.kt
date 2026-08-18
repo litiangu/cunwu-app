@@ -32,7 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.AddCircle
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -203,22 +203,47 @@ fun ItemEditScreen(
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text(title, style = MaterialTheme.typography.headlineSmall) },
-                navigationIcon = {
-                    IconButton(onClick = { requestClose() }) {   // Step 14：走放弃保护
-                        Icon(Icons.Filled.Close, contentDescription = "关闭")
-                    }
-                },
-                actions = {
-                    TextButton(onClick = {
-                        context.fireHapticIfEnabled()
-                        viewModel.save(onDone)
-                    }) {
-                        Text("保存", color = MaterialTheme.colorScheme.primary)
-                    }
+            if (showImageUpload) {
+                // 上传页顶栏：提升到 Scaffold 层级，避免被外层 topBar 遮挡
+                val uploadTitle = buildString {
+                    append("编辑")
+                    if (catName.isNotEmpty()) append(catName)
+                    append("物品图片")
                 }
-            )
+                CenterAlignedTopAppBar(
+                    title = { Text(uploadTitle, style = MaterialTheme.typography.headlineSmall) },
+                    navigationIcon = {
+                        IconButton(onClick = { showImageUpload = false }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        }
+                    },
+                    actions = {
+                        TextButton(onClick = {
+                            context.fireHapticIfEnabled()
+                            showImageUpload = false
+                        }) {
+                            Text("保存", color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                )
+            } else {
+                CenterAlignedTopAppBar(
+                    title = { Text(title, style = MaterialTheme.typography.headlineSmall) },
+                    navigationIcon = {
+                        IconButton(onClick = { requestClose() }) {   // Step 14：走放弃保护
+                            Icon(Icons.Filled.Close, contentDescription = "关闭")
+                        }
+                    },
+                    actions = {
+                        TextButton(onClick = {
+                            context.fireHapticIfEnabled()
+                            viewModel.save(onDone)
+                        }) {
+                            Text("保存", color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                )
+            }
         }
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize()) {
@@ -451,6 +476,7 @@ fun ItemEditScreen(
                 ImageUploadScreen(
                     viewModel = viewModel,
                     categoryKey = selectedCategory?.colorKey,
+                    contentPadding = innerPadding,
                     onPickCamera = {
                         // 创建相机临时文件 → 通过 FileProvider 获取 URI → 启动相机
                         val file = File(context.cacheDir, "temp_camera_${System.currentTimeMillis()}.jpg")
@@ -618,15 +644,18 @@ private fun ImagePlaceholder(
 }
 
 /**
- * Screen 2.5：上传物品图片全屏页面 [参考设计截图 2.5]。
+ * Screen 2.5：上传物品图片内容区 [参考设计截图 2.5]。
  *
  * 结构：
- * - CenterAlignedTopAppBar：← 返回 + "上传物品图片"
  * - 预览大区：已选图显示图片，未选显示分类图标 + 提示文字
  * - 底部两卡片横排：「拍照」（橙色圈+相机图标）+「相册」（灰色圈+相册图标）
  *
+ * 注意：顶栏由外层 ItemEditScreen 的 Scaffold.topBar 动态切换提供，
+ * 避免本组件作为 content overlay 时被外层 Scaffold topBar 遮挡。
+ *
  * @param viewModel 当前物品编辑 ViewModel（读取/写入图片路径与展示态）
  * @param categoryKey 当前分类颜色键（用于未选图时的图标展示）
+ * @param contentPadding Scaffold 传入的内边距（避免内容被外层 topBar 遮挡）
  * @param onPickCamera 点击「拍照」回调
  * @param onPickGallery 点击「相册」回调
  * @param onDismiss 点击返回 / 遮罩关闭回调
@@ -636,6 +665,7 @@ private fun ImagePlaceholder(
 private fun ImageUploadScreen(
     viewModel: ItemEditViewModel,
     categoryKey: String?,
+    contentPadding: PaddingValues,
     onPickCamera: () -> Unit,
     onPickGallery: () -> Unit,
     onDismiss: () -> Unit,
@@ -666,27 +696,10 @@ private fun ImageUploadScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)   // 不透明底，防止透出底层表单
+            .padding(contentPadding)                         // 顶部避开外层 Scaffold topBar
     ) {
-        // 顶栏（对齐截图：标题 + X关闭 + 右上角保存）
-        CenterAlignedTopAppBar(
-            title = { Text("编辑家具物品", style = MaterialTheme.typography.headlineSmall) },
-            navigationIcon = {
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Filled.Close, contentDescription = "关闭")
-                }
-            },
-            actions = {
-                // 右上角「保存」：保存当前图片/抠图选择并退出回表单
-                TextButton(onClick = {
-                    // 提交类 CTA：开启震动时给轻触确认（Step 19）。
-                    context.fireHapticIfEnabled()
-                    onDismiss()
-                }) {
-                    Text("保存", color = brand, fontWeight = FontWeight.Bold)
-                }
-            }
-        )
-
+        // 注意：顶栏已提升到 ItemEditScreen 的 Scaffold.topBar 中动态切换，
+        // 避免作为 content overlay 时被外层 Scaffold topBar 遮挡。
         Box(modifier = Modifier.weight(1f)) {
             Column(
                 modifier = Modifier

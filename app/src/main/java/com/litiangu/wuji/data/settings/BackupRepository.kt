@@ -33,7 +33,7 @@ object BackupRepository {
     private lateinit var settings: SettingsDataStore
     private lateinit var appContext: Context
 
-    private val _reminderOn = MutableStateFlow(true)
+    private val _reminderOn = MutableStateFlow(false)
     val reminderOn: StateFlow<Boolean> = _reminderOn
 
     private val _threshold = MutableStateFlow(14)

@@ -65,8 +65,10 @@ data class BackupSettings(
     val viewMode: String,
     val hasLaunchedBefore: Boolean,
     val lastBackupAt: Long = 0L,
-    val backupReminderOn: Boolean = true,
+    val backupReminderOn: Boolean = false,
     val backupReminderThresholdDays: Int = 14,
+    val userNickname: String = "",
+    val userAvatarPath: String? = null,  // 存 basename；null/空 = 使用默认图标
 )
 
 /** 完整备份载荷：四表 + 设置 + 元信息。图片路径在导出时转为 basename。 */
@@ -129,6 +131,7 @@ class BackupViewModel(
 
     /** 组装 payload：读四表 + 设置，图片路径转 basename 便于跨设备/重装重映射。 */
     private suspend fun buildPayload(context: Context): BackupPayload {
+        val rawAvatarPath = settings.userAvatarPathFlow.first()
         val settingsBackup = with(settings) {
             BackupSettings(
                 darkMode = darkModeFlow.first().value,
@@ -141,6 +144,8 @@ class BackupViewModel(
                 lastBackupAt = lastBackupAtFlow.first(),
                 backupReminderOn = backupReminderOnFlow.first(),
                 backupReminderThresholdDays = backupReminderThresholdDaysFlow.first(),
+                userNickname = userNicknameFlow.first(),
+                userAvatarPath = rawAvatarPath.takeIf { it.isNotBlank() }?.let { File(it).name },
             )
         }
         val items = db.itemDao().getAll().map { remapToBackup(it) }
@@ -166,7 +171,7 @@ class BackupViewModel(
         croppedImagePath = e.croppedImagePath?.let { File(it).name },
     )
 
-    /** 收集所有需打包的图片 basename（items + trash 的原图与 cutout）。 */
+    /** 收集所有需打包的图片 basename（items + trash 的原图与 cutout + 用户头像）。 */
     private fun collectImageBasenames(payload: BackupPayload): Set<String> {
         val set = mutableSetOf<String>()
         payload.items.forEach {
@@ -177,6 +182,7 @@ class BackupViewModel(
             it.imagePath?.let { p -> set.add(File(p).name) }
             it.croppedImagePath?.let { p -> set.add(File(p).name) }
         }
+        payload.settings.userAvatarPath?.let { set.add(it) }
         return set
     }
 
@@ -306,6 +312,9 @@ class BackupViewModel(
             setLastBackupAt(payload.settings.lastBackupAt)
             setBackupReminderOn(payload.settings.backupReminderOn)
             setBackupReminderThresholdDays(payload.settings.backupReminderThresholdDays)
+            setUserNickname(payload.settings.userNickname)
+            // userAvatarPath 存的是 basename，absImagePath 映射到当前设备 filesDir/images；空则存空串
+            setUserAvatarPath(absImagePath(payload.settings.userAvatarPath, context) ?: "")
         }
         return BackupImportSummary(
             items = payload.items.size,

@@ -74,6 +74,18 @@ object SmartCutoutEngine {
         val input = FloatArray(1 * 3 * MODEL_SIZE * MODEL_SIZE)
         prepareInput(scaled, input, MODEL_SIZE, MODEL_SIZE)
 
+        // 3.5 模型完整性前置校验：Git LFS 指针文件仅约 130 字节，会让 LiteRT 抛
+        // "Failed to load model from buffer"。声明大小小于 1MB 即视为未拉取真实模型。
+        val modelFd = context.assets.openFd(MODEL_FILE)
+        val modelSize = modelFd.length
+        modelFd.close()
+        if (modelSize < 1024 * 1024L) {
+            throw IllegalStateException(
+                "模型文件未下载完整（${modelSize} 字节，疑似 Git LFS 指针）。" +
+                "请在本机项目目录执行 git lfs pull 拉取 ormbg.tflite"
+            )
+        }
+
         // 4. LiteRT 推理（CPU-only，模拟器 GPU 不可用）
         val options = CompiledModel.Options(Accelerator.CPU)
         val model = CompiledModel.create(context.assets, MODEL_FILE, options)

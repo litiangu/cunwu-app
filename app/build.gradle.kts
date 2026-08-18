@@ -38,6 +38,11 @@ android {
         compose = true
         buildConfig = true
     }
+    // 端侧模型 ormbg.tflite（约 176MB）禁止 aapt 压缩，否则 LiteRT 无法 mmap 加载
+    // AGP 7+ 用 androidResources 替代已弃用的 aaptOptions
+    androidResources {
+        noCompress.add("tflite")
+    }
 }
 
 dependencies {

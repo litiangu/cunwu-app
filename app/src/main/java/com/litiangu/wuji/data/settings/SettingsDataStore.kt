@@ -46,7 +46,7 @@ private val MONTHLY_BUDGET_ANCHOR_KEY = doublePreferencesKey("monthly_budget_anc
 private val VIEW_MODE_KEY = stringPreferencesKey("view_mode")   // list-default / card-2x2 / list-compact
 private val HAS_LAUNCHED_BEFORE_KEY = booleanPreferencesKey("has_launched_before")  // 首次启动引导标记
 private val LAST_BACKUP_AT_KEY = longPreferencesKey("last_backup_at")            // 上次成功备份时间戳（Step 23）
-private val BACKUP_REMINDER_ON_KEY = booleanPreferencesKey("backup_reminder_on")  // 备份提醒开关（Step 23，默认开）
+private val BACKUP_REMINDER_ON_KEY = booleanPreferencesKey("backup_reminder_on")  // 备份提醒开关（Step 23，默认关，由用户决定是否开启）
 private val BACKUP_REMINDER_THRESHOLD_KEY = intPreferencesKey("backup_reminder_threshold") // 未备份提醒阈值天数（Step 23，默认 14）
 private val USER_NICKNAME_KEY = stringPreferencesKey("user_nickname")   // 用户昵称（Step 25，默认「本地用户」）
 private val USER_AVATAR_PATH_KEY = stringPreferencesKey("user_avatar_path") // 用户头像本地路径（Step 25，空 = 默认图标）
@@ -118,9 +118,9 @@ class SettingsDataStore(private val context: Context) {
         context.dataStore.edit { it[LAST_BACKUP_AT_KEY] = value }
     }
 
-    // 备份提醒开关（Step 23）：默认开。
+    // 备份提醒开关（Step 23）：默认关，由用户决定是否开启。
     val backupReminderOnFlow: Flow<Boolean> = context.dataStore.data
-        .map { prefs -> prefs[BACKUP_REMINDER_ON_KEY] ?: true }
+        .map { prefs -> prefs[BACKUP_REMINDER_ON_KEY] ?: false }
 
     suspend fun setBackupReminderOn(enabled: Boolean) {
         context.dataStore.edit { it[BACKUP_REMINDER_ON_KEY] = enabled }
