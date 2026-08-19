@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Insights
@@ -14,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.litiangu.wuji.WujiApplication
@@ -22,6 +24,7 @@ import com.litiangu.wuji.data.db.WujiDatabaseProvider
 import com.litiangu.wuji.data.settings.DarkModePref
 import com.litiangu.wuji.data.settings.SettingsDataStore
 import com.litiangu.wuji.ui.analysis.AnalysisScreen
+import com.litiangu.wuji.ui.designsystem.BottomPillBar
 import com.litiangu.wuji.ui.designsystem.BottomTab
 import com.litiangu.wuji.ui.home.HomeViewModel
 import com.litiangu.wuji.ui.home.HomeScreen
@@ -123,16 +126,19 @@ fun WujiApp() {
         val showOnboarding = isReady && !app.launchedBefore && !forceHome
         val showHome = isReady && homeVm != null && !showOnboarding
 
+        // Step 32 修订：分析页打开/关闭时同步底栏 selectedTab，
+        // 保证底栏高亮与「当前页面对应 tab」语义一致（首页 ↔ 分析 切换正确）。
+        androidx.compose.runtime.LaunchedEffect(showAnalysis) {
+            selectedTab = if (showAnalysis) analysisTab else homeTab
+        }
+
         Box(modifier = Modifier.fillMaxSize()) {
             // ====== 首页（常驻底层）======
+            // Step 32 修订：BottomPillBar 已提升到本层最末渲染（分析页也需底栏切换），
+            // HomeScreen 不再接收 selectedTab / onTabSelect。
             if (showHome) {
                 HomeScreen(
                     viewModel = homeVm!!,
-                    selectedTab = selectedTab,
-                    onTabSelect = { tab ->
-                        selectedTab = tab
-                        if (tab.label == analysisTab.label) showAnalysis = true
-                    },
                     onNew = {
                         // Step 12 改造：FAB 不再直进表单，先走分类选择页
                         categorySource = null
@@ -288,11 +294,41 @@ fun WujiApp() {
             }
 
             // ====== 分析页 overlay ======
+            // Step 32：顶栏无返回箭头，返回路径 = 系统返回键（BackHandler 拦截后调 onClose）
             if (showAnalysis) {
-                AnalysisScreen(onBack = {
+                AnalysisScreen(onClose = {
                     showAnalysis = false
                     selectedTab = homeTab
                 })
+            }
+
+            // ====== 底部悬浮导航（Step 32 修订：提升到 WujiApp 层）======
+            // 首页与分析页共用同一底栏（首页 / + / 分析 三键），保证分析页也能一键切回首页。
+            // 仅当「首页或分析页激活」时显示；设置/新增/回收站等子页打开时隐藏，避免遮挡其底部内容。
+            val showBottomBar = showHome && !showSettings && !showCategorySelect &&
+                !showCustomCategoryDialog && !showBudgetAnchor && !showTrash && !showBackup &&
+                !showAbout && !showProfileEdit && !showAdd && showEdit == null
+            if (showBottomBar) {
+                BottomPillBar(
+                    items = listOf(homeTab, analysisTab),
+                    selected = selectedTab,
+                    onSelect = { tab ->
+                        selectedTab = tab
+                        if (tab.label == analysisTab.label) {
+                            showAnalysis = true
+                        } else {
+                            showAnalysis = false
+                        }
+                    },
+                    onFabClick = {
+                        categorySource = null
+                        preselectedCategoryId = null
+                        showCategorySelect = true
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding(),
+                )
             }
         }
     }

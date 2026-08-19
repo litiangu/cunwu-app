@@ -1,6 +1,7 @@
 package com.litiangu.wuji
 
 import android.app.Application
+import com.litiangu.wuji.data.AnalysisRepository
 import com.litiangu.wuji.data.db.WujiDatabase
 import com.litiangu.wuji.data.db.WujiDatabaseProvider
 import com.litiangu.wuji.data.db.TrashRepository
@@ -42,6 +43,7 @@ class WujiApplication : Application() {
             BudgetAnchorRepository.init(this@WujiApplication, database)  // 预热预算锚点内存缓存
             BackupRepository.init(this@WujiApplication)            // 预热数据备份内存缓存
             TrashRepository.init(database)                         // 预热最近删除内存缓存
+            AnalysisRepository.init(this@WujiApplication)         // 预热分析页内存缓存（消除进入跳闪）
             _isReady.value = true
         }
     }

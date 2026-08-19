@@ -16,8 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsBackupRestore
@@ -49,13 +47,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
-import com.litiangu.wuji.ui.designsystem.BottomPillBar
-import com.litiangu.wuji.ui.designsystem.BottomTab
 import com.litiangu.wuji.ui.designsystem.CircleIconButton
 import com.litiangu.wuji.ui.designsystem.TimelineRow
+import com.litiangu.wuji.ui.home.CategoryFilterBar
 import com.litiangu.wuji.ui.onboarding.AppSplash
 import com.litiangu.wuji.ui.theme.BrandOrange
 import com.litiangu.wuji.ui.theme.WujiRadius
+import com.litiangu.wuji.ui.theme.WujiSize
 import com.litiangu.wuji.ui.theme.WujiSpace
 
 /**
@@ -86,8 +84,6 @@ private const val BACKUP_REMINDER_AUTO_HIDE_MS = 30_000L
 fun HomeScreen(
     viewModel: HomeViewModel,
     modifier: Modifier = Modifier,
-    selectedTab: BottomTab,
-    onTabSelect: (BottomTab) -> Unit,
     onNew: () -> Unit = {},
     onSetting: () -> Unit = {},
     onEdit: (Long) -> Unit = {},
@@ -173,13 +169,6 @@ fun HomeScreen(
 
     val filterActive = statusFilter.isNotEmpty() || sortKey != "date" || sortOrder != "desc"
 
-    val tabs = remember {
-        listOf(
-            BottomTab("首页", Icons.Filled.Home),
-            BottomTab("分析", Icons.Filled.Insights),
-        )
-    }
-
     val searchFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(searchActive) {
         if (searchActive) searchFocus.requestFocus()
@@ -263,11 +252,13 @@ fun HomeScreen(
             )
         },
         bottomBar = {
-            BottomPillBar(
-                items = tabs,
-                selected = selectedTab,
-                onSelect = { tab -> openItemId = null; onTabSelect(tab) },
-                onFabClick = { openItemId = null; onNew() },
+            // Step 32 修订：BottomPillBar 已提升到 WujiApp 层（分析页也需底栏切换）。
+            // 此处保留等高空占位，让 Scaffold innerPadding 继续为列表留出底部空间，
+            // 避免列表内容被 WujiApp 层的悬浮底栏遮挡。
+            Spacer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(WujiSize.bottomBarHeight + 20.dp),
             )
         },
     ) { padding ->
