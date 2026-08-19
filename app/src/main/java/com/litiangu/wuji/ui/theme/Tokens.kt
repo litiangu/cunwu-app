@@ -148,7 +148,7 @@ object WujiSpace {
     val lg = 24.dp
     val xl = 32.dp
 }
-val bottomBarHeight = 80.dp
+val bottomBarHeight = 68.dp   // Step 34 胶囊底栏高度（旧值 80.dp，历史遗留别名，无引用）
 
 // Tints with cardShadow
 data class TintPalette(
@@ -168,6 +168,9 @@ val LocalTints = compositionLocalOf { LightTints }
 @Composable
 fun tints(): TintPalette = LocalTints.current
 
+// Step 34 新增：当前是否深色主题（WujiTheme 注入，供组件按明暗切换容器层级色）
+val LocalWujiDarkTheme = compositionLocalOf { false }
+
 object WujiRadius {
     val lg = 8.dp
     val xl = 16.dp
@@ -181,6 +184,7 @@ object WujiSize {
     val circleButton = 40.dp
     val iconSm = 20.dp
     val statCardHeight = 112.dp
-    val bottomBarHeight = 80.dp
+    val bottomBarHeight = 68.dp        // Step 34 胶囊底栏高度（原 80.dp，改矮）
+    val bottomBarFabProtrude = 16.dp   // Step 34 中央 + 按钮凸出胶囊顶部的高度
 }
 

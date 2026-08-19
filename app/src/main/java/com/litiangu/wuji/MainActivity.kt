@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.runtime.Composable
@@ -18,6 +19,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.WujiApplication
 import com.litiangu.wuji.data.db.CategoryEntity
 import com.litiangu.wuji.data.db.WujiDatabaseProvider
@@ -309,6 +311,7 @@ fun WujiApp() {
                 !showCustomCategoryDialog && !showBudgetAnchor && !showTrash && !showBackup &&
                 !showAbout && !showProfileEdit && !showAdd && showEdit == null
             if (showBottomBar) {
+                // 悬浮胶囊：直接浮在页面内容上方，胶囊外区域透明，不再用不透明层遮挡下方内容。
                 BottomPillBar(
                     items = listOf(homeTab, analysisTab),
                     selected = selectedTab,

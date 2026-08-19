@@ -64,7 +64,6 @@ import com.litiangu.wuji.ui.home.PRIVACY_MASK
 import com.litiangu.wuji.ui.item.decodeImagePath
 import com.litiangu.wuji.ui.theme.GradeExcellentLight
 import com.litiangu.wuji.ui.theme.WujiRadius
-import com.litiangu.wuji.ui.theme.WujiSize
 
 /**
  * 分析页（Step 32 重设计，对齐 4.0 设计稿；Step 33 底部避让 + 排行榜领奖台）：
@@ -86,18 +85,9 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
     // 顶栏无返回箭头（4.0 设计稿形态），返回路径 = 系统返回键（Step 32 决策 A）
     BackHandler(onBack = onClose)
 
-    // 与 HomeScreen 完全一致：Scaffold bottomBar 占位，让 innerPadding 自动为
-    // WujiApp 层悬浮底栏预留空间，避免分析页内容滑动到底时被底栏遮挡。
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = {
-            Spacer(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(WujiSize.bottomBarHeight + 20.dp),
-            )
-        },
     ) { padding ->
         Column(
             modifier = Modifier

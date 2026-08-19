@@ -53,7 +53,6 @@ import com.litiangu.wuji.ui.home.CategoryFilterBar
 import com.litiangu.wuji.ui.onboarding.AppSplash
 import com.litiangu.wuji.ui.theme.BrandOrange
 import com.litiangu.wuji.ui.theme.WujiRadius
-import com.litiangu.wuji.ui.theme.WujiSize
 import com.litiangu.wuji.ui.theme.WujiSpace
 
 /**
@@ -251,16 +250,6 @@ fun HomeScreen(
                 ),
             )
         },
-        bottomBar = {
-            // Step 32 修订：BottomPillBar 已提升到 WujiApp 层（分析页也需底栏切换）。
-            // 此处保留等高空占位，让 Scaffold innerPadding 继续为列表留出底部空间，
-            // 避免列表内容被 WujiApp 层的悬浮底栏遮挡。
-            Spacer(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(WujiSize.bottomBarHeight + 20.dp),
-            )
-        },
     ) { padding ->
         // 数据首读前：复用品牌启动页视觉，避免「空白页→有物品页」闪现，且与进程预热期启动页连续。
         if (!itemsLoaded) {
@@ -283,8 +272,10 @@ fun HomeScreen(
             LazyColumn(
                 modifier = listModifier,
                 contentPadding = PaddingValues(
-                    horizontal = WujiSpace.lg,
-                    vertical = WujiSpace.md,
+                    start = WujiSpace.lg,
+                    end = WujiSpace.lg,
+                    top = WujiSpace.md,
+                    bottom = 0.dp,
                 ),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
@@ -361,8 +352,10 @@ fun HomeScreen(
                 columns = GridCells.Fixed(cols),
                 modifier = listModifier,
                 contentPadding = PaddingValues(
-                    horizontal = WujiSpace.lg,
-                    vertical = WujiSpace.md,
+                    start = WujiSpace.lg,
+                    end = WujiSpace.lg,
+                    top = WujiSpace.md,
+                    bottom = 0.dp,
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),

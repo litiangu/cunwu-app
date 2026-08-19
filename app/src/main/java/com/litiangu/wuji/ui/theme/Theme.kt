@@ -77,7 +77,10 @@ fun WujiTheme(
             outlineVariant = OutlineVariantLight
         )
     }
-    CompositionLocalProvider(LocalTints provides if (darkTheme) DarkTints else LightTints) {
+    CompositionLocalProvider(
+        LocalTints provides if (darkTheme) DarkTints else LightTints,
+        LocalWujiDarkTheme provides darkTheme,
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = WujiTypography,
