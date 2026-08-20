@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.ChevronRight
@@ -82,7 +83,18 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.core.net.toUri
+import kotlin.math.absoluteValue
+import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.data.db.CategoryEntity
 import com.litiangu.wuji.data.db.ItemStatus
@@ -149,6 +161,11 @@ fun ItemEditScreen(
     var showImageUpload by remember { mutableStateOf(false) }
     // Step 14：放弃保护弹窗状态
     var showDiscardDialog by remember { mutableStateOf(false) }
+
+    // 修复01：附加费用 / 收益金额 添加弹窗开关 + 当前左滑展开的行 id（互斥）
+    var showAddExtraDialog by remember { mutableStateOf(false) }
+    var showAddResaleDialog by remember { mutableStateOf(false) }
+    var openRowId by remember { mutableStateOf<Long?>(null) }
 
     // 相机拍照临时文件（TakePicture 合约需要预先创建文件并通过 FileProvider 传 URI）
     var tempCameraFile by remember { mutableStateOf<File?>(null) }
@@ -406,7 +423,7 @@ fun ItemEditScreen(
                     }
                 }
 
-                // 卡片 3：附加费用 + 收益金额
+                // 卡片 3：附加费用 + 收益金额（修复01：子项可任意增删改）
                 FormCard {
                     Column {
                         // 附加费用标题行
@@ -421,7 +438,7 @@ fun ItemEditScreen(
                             )
                             Spacer(Modifier.weight(1f))
                             IconButton(
-                                onClick = { },
+                                onClick = { showAddExtraDialog = true },
                                 colors = IconButtonDefaults.iconButtonColors(
                                     contentColor = MaterialTheme.colorScheme.primary
                                 )
@@ -430,30 +447,67 @@ fun ItemEditScreen(
                             }
                         }
                         Spacer(Modifier.height(8.dp))
-                        MoneySubRow(
-                            label = "买配件",
-                            value = viewModel.accessoryCostText,
-                            onValueChange = viewModel::onAccessoryCostChange
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        MoneySubRow(
-                            label = "维修费用",
-                            value = viewModel.repairCostText,
-                            onValueChange = viewModel::onRepairCostChange
-                        )
+                        viewModel.extraItems.forEachIndexed { index, item ->
+                            SwipeableMoneyRow(
+                                item = item,
+                                isOpen = openRowId == item.id,
+                                onOpenChange = { shouldOpen ->
+                                    openRowId = if (shouldOpen) item.id else null
+                                },
+                                onLabelChange = { viewModel.updateExtraItemLabel(item.id, it) },
+                                onAmountChange = { viewModel.updateExtraItemAmount(item.id, it) },
+                                onDelete = { viewModel.removeExtraItem(item.id) },
+                            )
+                            if (index < viewModel.extraItems.lastIndex) {
+                                // 等距分割线：上下各 12dp，1dp 横线居中
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(vertical = 12.dp),
+                                    thickness = 1.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                )
+                            }
+                        }
                         Spacer(Modifier.height(16.dp))
                         // 收益金额
-                        Text(
-                            "收益金额",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "收益金额",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.weight(1f))
+                            IconButton(
+                                onClick = { showAddResaleDialog = true },
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Icon(Icons.Filled.AddCircle, null)
+                            }
+                        }
                         Spacer(Modifier.height(8.dp))
-                        MoneySubRow(
-                            label = "二手变现",
-                            value = viewModel.resaleValueText,
-                            onValueChange = viewModel::onResaleValueChange
-                        )
+                        viewModel.resaleItems.forEachIndexed { index, item ->
+                            SwipeableMoneyRow(
+                                item = item,
+                                isOpen = openRowId == item.id,
+                                onOpenChange = { shouldOpen ->
+                                    openRowId = if (shouldOpen) item.id else null
+                                },
+                                onLabelChange = { viewModel.updateResaleItemLabel(item.id, it) },
+                                onAmountChange = { viewModel.updateResaleItemAmount(item.id, it) },
+                                onDelete = { viewModel.removeResaleItem(item.id) },
+                            )
+                            if (index < viewModel.resaleItems.lastIndex) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(vertical = 12.dp),
+                                    thickness = 1.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -484,6 +538,26 @@ fun ItemEditScreen(
                         galleryLauncher.launch("image/*")
                     },
                     onDismiss = { showImageUpload = false }
+                )
+            }
+
+            // 修复01：附加费用 / 收益金额 添加弹窗（居中，绿色 ✔ 确认，点外关闭）
+            if (showAddExtraDialog) {
+                AddMoneyItemDialog(
+                    onDismiss = { showAddExtraDialog = false },
+                    onConfirm = { label, amount ->
+                        viewModel.addExtraItem(label, amount)
+                        showAddExtraDialog = false
+                    }
+                )
+            }
+            if (showAddResaleDialog) {
+                AddMoneyItemDialog(
+                    onDismiss = { showAddResaleDialog = false },
+                    onConfirm = { label, amount ->
+                        viewModel.addResaleItem(label, amount)
+                        showAddResaleDialog = false
+                    }
                 )
             }
 
@@ -1088,51 +1162,274 @@ private fun LabeledInputRow(
     }
 }
 
-/** 附加费用 / 收益金额的子金额行：浅底圆角容器，左侧标签 + 右侧右对齐数字输入。 */
+/**
+ * 修复01：附加费用 / 收益金额的单行子项。
+ * - 左标签、右金额均为可编辑 TextField（含默认项），默认项也只是预设的常见事项，用户可任意改名/改值。
+ * - 左滑露出右侧 error 红底 + 白色 X 圆钮，点击即硬删除（无软删除、无二次确认），误删用「+」重加。
+ * - 手势复刻首页 SwipeableItemCard：左滑左移、过半吸附、快速甩动判定；互斥由外层 openRowId 管理。
+ * - 视觉按 DESIGN.md 方案 A：纯白底 surfaceContainerLowest + 行间 1px 缩进分隔线，去掉灰底圆角。
+ */
 @Composable
-private fun MoneySubRow(label: String, value: String, onValueChange: (String) -> Unit) {
-    Row(
+private fun SwipeableMoneyRow(
+    item: MoneyItem,
+    isOpen: Boolean,
+    onOpenChange: (Boolean) -> Unit,
+    onLabelChange: (String) -> Unit,
+    onAmountChange: (String) -> Unit,
+    onDelete: () -> Unit,
+) {
+    val localDensity = LocalDensity.current
+    val context = LocalContext.current
+    val actionWidth = 64.dp
+    val actionWidthPx = with(localDensity) { actionWidth.toPx() }
+    val thresholdRatio = 0.5f
+    val flingVelocity = 400f
+    val scope = rememberCoroutineScope()
+    val offsetX = remember { Animatable(0f) }
+
+    // 外部互斥状态变化同步到滑动动画
+    LaunchedEffect(isOpen) {
+        offsetX.animateTo(if (isOpen) -actionWidthPx else 0f)
+    }
+
+    val draggableState = rememberDraggableState { delta ->
+        scope.launch {
+            offsetX.snapTo((offsetX.value + delta).coerceIn(-actionWidthPx, 0f))
+        }
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                MaterialTheme.colorScheme.surfaceContainerLow,
-                RoundedCornerShape(WujiRadius.md)
-            )
-            .padding(horizontal = 12.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .height(IntrinsicSize.Min),
     ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        TextField(
-            value = value,
-            onValueChange = onValueChange,
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            textStyle = TextStyle(
-                textAlign = TextAlign.End,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            ),
-            placeholder = {
-                Text(
-                    "0.00",
-                    textAlign = TextAlign.End,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.fillMaxWidth()
+        // 背后右侧删除按钮区：error 红底 + 白色 X 圆钮
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .width(actionWidth)
+                .clip(RoundedCornerShape(topEnd = WujiRadius.md, bottomEnd = WujiRadius.md))
+                .background(MaterialTheme.colorScheme.error)
+                .clickableNoRipple {
+                    context.fireHapticIfEnabled()
+                    scope.launch {
+                        offsetX.animateTo(0f)
+                        onOpenChange(false)
+                        onDelete()
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = "删除",
+                tint = MaterialTheme.colorScheme.onError,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+
+        // 前景内容卡：纯白底 + 左右可编辑
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                .draggable(
+                    orientation = Orientation.Horizontal,
+                    state = draggableState,
+                    onDragStopped = { velocity ->
+                        scope.launch {
+                            val shouldOpen = when {
+                                velocity < -flingVelocity -> true
+                                velocity > flingVelocity -> false
+                                else -> offsetX.value.absoluteValue > actionWidthPx * thresholdRatio
+                            }
+                            offsetX.animateTo(if (shouldOpen) -actionWidthPx else 0f)
+                            onOpenChange(shouldOpen)
+                        }
+                    },
                 )
-            },
-            colors = transparentTextFieldColors(),
-            modifier = Modifier.width(120.dp)
-        )
+                .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // 左：可编辑标签
+                BasicTextField(
+                    value = item.label,
+                    onValueChange = onLabelChange,
+                    singleLine = true,
+                    textStyle = TextStyle(
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    modifier = Modifier.weight(1f),
+                    decorationBox = { innerTextField ->
+                        if (item.label.isEmpty()) {
+                            Text(
+                                "事项",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            )
+                        }
+                        innerTextField()
+                    },
+                )
+                Spacer(Modifier.width(8.dp))
+                // 右：可编辑金额（Decimal，右对齐，18sp 加粗）
+                // 修复02：「0.00」默认态走 placeholder（浅色），点击直接进入输入而非删占位符；
+                // 任何真实数字 >0 均按深色加粗显示；清空后回到 placeholder。
+                val isPlaceholder = item.amountText.isEmpty() || item.amountText == "0.00"
+                val fieldValue = if (isPlaceholder) "" else item.amountText
+                BasicTextField(
+                    value = fieldValue,
+                    onValueChange = { newValue -> onAmountChange(newValue) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    textStyle = TextStyle(
+                        textAlign = TextAlign.End,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    modifier = Modifier.width(120.dp),
+                    decorationBox = { innerTextField ->
+                        if (isPlaceholder) {
+                            Text(
+                                "0.00",
+                                textAlign = TextAlign.End,
+                                modifier = Modifier.fillMaxWidth(),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            )
+                        }
+                        innerTextField()
+                    },
+                )
+            }
+        }
     }
 }
+
+/**
+ * 修复01：添加子项弹窗。居中白卡，含「事项」「金额」两输入框与圆形 ✔ 确认钮。
+ * - ✔ 用固定 success 绿（不随深色翻转）；事项非空且金额可解析才提交。
+ * - 无取消按钮，点卡片外（遮罩）关闭等同取消。
+ */
+@Composable
+private fun AddMoneyItemDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (label: String, amountText: String) -> Unit,
+) {
+    var label by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    val canConfirm = label.isNotBlank() && amount.toDoubleOrNull() != null
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.4f))
+            .clickableNoRipple { onDismiss() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            // 阻止点卡片内冒泡到遮罩关闭
+            modifier = Modifier
+                .width(280.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(20.dp)
+                .clickableNoRipple { },
+        ) {
+            // 顶部行：标题（左）+ 圆形 ✔ 确认钮（右）
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "添加子项",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                // 圆形 ✔ 确认钮（success 绿，固定不随主题翻转）
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF22C55E))
+                        .clickableNoRipple {
+                            if (canConfirm) {
+                                onConfirm(label.trim(), amount.trim())
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = "确认",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            BasicTextField(
+                value = label,
+                onValueChange = { label = it },
+                singleLine = true,
+                textStyle = TextStyle(fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        MaterialTheme.colorScheme.surfaceContainerLow,
+                        RoundedCornerShape(8.dp),
+                    )
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                decorationBox = { inner ->
+                    if (label.isEmpty()) {
+                        Text("事项", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), fontSize = 16.sp)
+                    }
+                    inner()
+                },
+            )
+            Spacer(Modifier.height(8.dp))
+            BasicTextField(
+                value = amount,
+                onValueChange = { amount = it },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                textStyle = TextStyle(fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        MaterialTheme.colorScheme.surfaceContainerLow,
+                        RoundedCornerShape(8.dp),
+                    )
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                decorationBox = { inner ->
+                    if (amount.isEmpty()) {
+                        Text("金额", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), fontSize = 16.sp)
+                    }
+                    inner()
+                },
+            )
+        }
+    }
+}
+
+/** 操作按钮不需要涟漪，避免与滑动手势冲突；保留点击响应。 */
+private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
+    clickable(
+        indication = null,
+        interactionSource = MutableInteractionSource(),
+        onClick = onClick,
+    )
 
 /** 状态点语义色：使用中绿、未使用灰、已售出橙（固定语义，不随主题翻转）。 */
 private fun statusDotColor(status: ItemStatus): Color = when (status) {

@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
 // @TypeConverters 让全局能用 Converters（枚举 <-> 字符串）。
 @Database(
     entities = [ItemEntity::class, CategoryEntity::class, TrashEntity::class, CategoryBudgetEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -79,6 +79,15 @@ abstract class WujiDatabase : RoomDatabase() {
                 )
             }
         }
+
+        // 版本 4 → 5：items 表新增 extraItemsJson / resaleItemsJson 两 TEXT 列（修复01 子项 JSON 持久化）。
+        // 既有数据默认 "[]" → VM init 走默认项回退（沿用既有聚合金额），零数据迁移损失。
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE items ADD COLUMN extraItemsJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE items ADD COLUMN resaleItemsJson TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
     }
 }
 
@@ -117,6 +126,7 @@ object WujiDatabaseProvider {
                 .addMigrations(WujiDatabase.MIGRATION_1_2) // 1→2 仅建 trash 表，保留旧数据
                 .addMigrations(WujiDatabase.MIGRATION_2_3) // 2→3 加 imageDisplayMode 列，保留旧数据
                 .addMigrations(WujiDatabase.MIGRATION_3_4) // 3→4 建 category_budgets 表，保留旧数据
+                .addMigrations(WujiDatabase.MIGRATION_4_5) // 4→5 加子项 JSON 列，保留旧数据
                 .build()
                 .also { INSTANCE = it }
                 .also {

@@ -17,6 +17,21 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+
+/**
+ * 附加费用 / 收益金额的子项。修复01 引入：支持任意增删改，保存时各自求和回写
+ * ItemEntity 的 extraCost / resaleValue 单列 + 完整 JSON 列表写入 extraItemsJson / resaleItemsJson。
+ * id 持久化（nanoTime 首次进入会话即固定，后续会话读回沿用），用于左滑互斥与删除定位。
+ */
+@Serializable
+data class MoneyItem(
+    val id: Long = System.nanoTime(),
+    val label: String,
+    val amountText: String,
+)
 
 /**
  * 新增 / 编辑物品的表单状态与持久化。
@@ -45,12 +60,18 @@ class ItemEditViewModel(
         private set
     var purchasePriceText by mutableStateOf("")
         private set
-    // Step 13：附加费用拆为两个子字段（买配件 / 维修费用），保存时求和写入 extraCost 单列
-    var accessoryCostText by mutableStateOf("")
+    // 修复01：附加费用 / 收益金额改为可增删改的子项列表，保存时各自求和写回 extraCost / resaleValue。
+    // 默认项是大众常见事项，用户可自行改名、改金额、删除或新增，不强制。
+    var extraItems by mutableStateOf<List<MoneyItem>>(
+        listOf(
+            MoneyItem(label = "买配件", amountText = ""),
+            MoneyItem(label = "维修费用", amountText = ""),
+        )
+    )
         private set
-    var repairCostText by mutableStateOf("")
-        private set
-    var resaleValueText by mutableStateOf("")
+    var resaleItems by mutableStateOf<List<MoneyItem>>(
+        listOf(MoneyItem(label = "二手变现", amountText = ""))
+    )
         private set
     // Step 14：图片路径（null = 未上传）
     var imagePath by mutableStateOf<String?>(null)
@@ -82,9 +103,8 @@ class ItemEditViewModel(
         val status: ItemStatus,
         val purchaseDate: Long,
         val purchasePriceText: String,
-        val accessoryCostText: String,
-        val repairCostText: String,
-        val resaleValueText: String,
+        val extraItems: List<MoneyItem>,
+        val resaleItems: List<MoneyItem>,
         val imagePath: String?,
         val croppedImagePath: String?,
         val imageDisplayMode: Int
@@ -97,8 +117,8 @@ class ItemEditViewModel(
             val b = baseline ?: return false
             return b != Baseline(
                 name, categoryId, status, purchaseDate,
-                purchasePriceText, accessoryCostText, repairCostText,
-                resaleValueText, imagePath,
+                purchasePriceText, extraItems.toList(), resaleItems.toList(),
+                imagePath,
                 croppedImagePath, imageDisplayMode
             )
         }
@@ -113,10 +133,14 @@ class ItemEditViewModel(
                     status = item.status
                     purchaseDate = item.purchaseDate
                     purchasePriceText = formatAmount(item.purchasePrice)
-                    // 旧数据无拆分，整体归入「买配件」，维修费用置 0
-                    accessoryCostText = formatAmount(item.extraCost)
-                    repairCostText = "0.00"
-                    resaleValueText = formatAmount(item.resaleValue)
+                    // 修复01：优先用持久化的 JSON 列；空/解析失败时回退到默认项（买配件/维修费用/二手变现）。
+                    extraItems = decodeMoneyItems(item.extraItemsJson) ?: listOf(
+                        MoneyItem(label = "买配件", amountText = formatAmount(item.extraCost)),
+                        MoneyItem(label = "维修费用", amountText = "0.00"),
+                    )
+                    resaleItems = decodeMoneyItems(item.resaleItemsJson) ?: listOf(
+                        MoneyItem(label = "二手变现", amountText = formatAmount(item.resaleValue)),
+                    )
                     imagePath = item.imagePath   // Step 14：加载已有图片路径
                     croppedImagePath = item.croppedImagePath // Step 16：加载已有抠图
                     imageDisplayMode = item.imageDisplayMode // Step 16：加载展示态
@@ -135,8 +159,8 @@ class ItemEditViewModel(
     private fun captureBaseline() {
         baseline = Baseline(
             name, categoryId, status, purchaseDate,
-            purchasePriceText, accessoryCostText, repairCostText,
-            resaleValueText, imagePath,
+            purchasePriceText, extraItems.toList(), resaleItems.toList(),
+            imagePath,
             croppedImagePath, imageDisplayMode
         )
     }
@@ -163,16 +187,37 @@ class ItemEditViewModel(
         errorMessage = null
     }
 
-    fun onAccessoryCostChange(value: String) {
-        accessoryCostText = value
+    // ====== 修复01：附加费用 / 收益金额子项 增删改 ======
+    fun addExtraItem(label: String, amountText: String) {
+        extraItems = extraItems + MoneyItem(label = label, amountText = amountText)
     }
 
-    fun onRepairCostChange(value: String) {
-        repairCostText = value
+    fun addResaleItem(label: String, amountText: String) {
+        resaleItems = resaleItems + MoneyItem(label = label, amountText = amountText)
     }
 
-    fun onResaleValueChange(value: String) {
-        resaleValueText = value
+    fun updateExtraItemLabel(id: Long, label: String) {
+        extraItems = extraItems.map { if (it.id == id) it.copy(label = label) else it }
+    }
+
+    fun updateExtraItemAmount(id: Long, amountText: String) {
+        extraItems = extraItems.map { if (it.id == id) it.copy(amountText = amountText) else it }
+    }
+
+    fun removeExtraItem(id: Long) {
+        extraItems = extraItems.filter { it.id != id }
+    }
+
+    fun updateResaleItemLabel(id: Long, label: String) {
+        resaleItems = resaleItems.map { if (it.id == id) it.copy(label = label) else it }
+    }
+
+    fun updateResaleItemAmount(id: Long, amountText: String) {
+        resaleItems = resaleItems.map { if (it.id == id) it.copy(amountText = amountText) else it }
+    }
+
+    fun removeResaleItem(id: Long) {
+        resaleItems = resaleItems.filter { it.id != id }
     }
 
     /** Step 14：图片选择完成后的回调，存储图片本地路径。重选原图时清空已有抠图结果。 */
@@ -252,10 +297,11 @@ class ItemEditViewModel(
             errorMessage = "购买日期不能晚于今天"
             return
         }
-        // 附加费用两子字段求和（空串按 0）
-        val extra = (accessoryCostText.trim().toDoubleOrNull() ?: 0.0) +
-                    (repairCostText.trim().toDoubleOrNull() ?: 0.0)
-        val resale = resaleValueText.trim().toDoubleOrNull() ?: 0.0
+        // 修复01：附加费用 / 收益金额各子项求和（空串按 0）+ 完整 JSON 序列化（持久化用户改过的标签/金额）
+        val extra = extraItems.sumOf { it.amountText.trim().toDoubleOrNull() ?: 0.0 }
+        val resale = resaleItems.sumOf { it.amountText.trim().toDoubleOrNull() ?: 0.0 }
+        val extraJson = encodeMoneyItems(extraItems)
+        val resaleJson = encodeMoneyItems(resaleItems)
 
         viewModelScope.launch {
             val now = System.currentTimeMillis()
@@ -272,6 +318,8 @@ class ItemEditViewModel(
                 croppedImagePath = croppedImagePath, // Step 16：写入抠图结果
                 imageDisplayMode = imageDisplayMode, // Step 16：写入展示态
                 healthScore = null,
+                extraItemsJson = extraJson,        // 修复01：持久化子项（含用户改过的标签）
+                resaleItemsJson = resaleJson,
                 createdAt = originalCreatedAt,
                 updatedAt = now
             )
@@ -285,5 +333,16 @@ class ItemEditViewModel(
     }
 
     private fun formatAmount(value: Double): String =
-        if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+        String.format(java.util.Locale.US, "%.2f", value)
+
+    // 修复01：MoneyItem 列表 ↔ JSON 字符串。decode 失败 / 空列表 → null（调用方走默认项回退）。
+    private val moneyItemListSerializer = ListSerializer(MoneyItem.serializer())
+    private fun encodeMoneyItems(list: List<MoneyItem>): String =
+        Json.encodeToString(moneyItemListSerializer, list)
+    private fun decodeMoneyItems(json: String): List<MoneyItem>? {
+        if (json.isBlank() || json == "[]") return null
+        return runCatching { Json.decodeFromString(moneyItemListSerializer, json) }
+            .getOrNull()
+            ?.takeIf { it.isNotEmpty() }
+    }
 }

@@ -34,6 +34,10 @@ data class ItemEntity(
     val croppedImagePath: String? = null,
     val imageDisplayMode: Int = 0,    // 图片展示态：0=原图 1=抠图（Step16）
     val healthScore: Int? = null,   // 健康分快照（Step3 填充）
+    // 修复01：附加费用 / 收益金额子项 JSON 序列化（kotlinx.serialization），保存用户改过的标签/金额。
+    // 默认 "[]" = 无子项，进入编辑页时 VM init 走默认项回退（买配件/维修费用/二手变现）。
+    val extraItemsJson: String = "[]",
+    val resaleItemsJson: String = "[]",
     val createdAt: Long,
     val updatedAt: Long
 )
