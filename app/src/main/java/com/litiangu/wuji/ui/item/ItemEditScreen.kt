@@ -216,14 +216,6 @@ fun ItemEditScreen(
                         IconButton(onClick = { showImageUpload = false }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                         }
-                    },
-                    actions = {
-                        TextButton(onClick = {
-                            context.fireHapticIfEnabled()
-                            showImageUpload = false
-                        }) {
-                            Text("保存", color = MaterialTheme.colorScheme.primary)
-                        }
                     }
                 )
             } else {
@@ -677,15 +669,13 @@ private fun ImageUploadScreen(
 
     // Step 16：抠图相关本地状态
     var processing by remember { mutableStateOf(false) }
-    // 已存在抠图则直接进入对比态；首次抠图成功后展开
-    var compareMode by remember { mutableStateOf(viewModel.croppedImagePath != null) }
-    var viewCutout by remember { mutableStateOf(viewModel.imageDisplayMode == 1) }
+    // 展示态直接读 viewModel.imageDisplayMode（0=原图 1=抠图），切换即写入，无需本地预览态
 
     val hasImage = viewModel.imagePath != null
     val hasCutout = viewModel.croppedImagePath != null
 
-    // 预览路径：对比态且选择「抠图」时显示透明 PNG，否则显示原图
-    val previewPath = if (compareMode && viewCutout && hasCutout) {
+    // 预览路径：展示态为抠图且已有抠图结果时显示透明 PNG，否则显示原图
+    val previewPath = if (viewModel.imageDisplayMode == 1 && hasCutout) {
         viewModel.croppedImagePath
     } else {
         viewModel.imagePath
@@ -712,7 +702,7 @@ private fun ImageUploadScreen(
 
                 // 预览大区（对齐截图：大圆角矩形容器）
                 // 抠图预览态用棋盘格底色凸显透明区域；原图态保持 surfaceContainerLow
-                val previewBg = if (compareMode && viewCutout && hasCutout)
+                val previewBg = if (viewModel.imageDisplayMode == 1 && hasCutout)
                     Color(0xFFE0E0E0) // 中灰底（透明区可见，白边/阴影可辨）
                 else
                     MaterialTheme.colorScheme.surfaceContainerLow
@@ -779,8 +769,8 @@ private fun ImageUploadScreen(
                     )
                 }
 
-                // Step 16：智能抠图入口（有图且尚未进入对比态时显示）
-                if (hasImage && !processing && !compareMode) {
+                // Step 16：智能抠图入口（有图且尚未生成抠图结果时显示）
+                if (hasImage && !processing && !hasCutout) {
                     Spacer(Modifier.height(16.dp))
                     CutoutEntryCard(
                         onClick = {
@@ -789,8 +779,8 @@ private fun ImageUploadScreen(
                             viewModel.runCutout(context) { ok ->
                                 processing = false
                                 if (ok) {
-                                    compareMode = true
-                                    viewCutout = true
+                                    // 抠图成功：直接置展示态为抠图，预览自动切换
+                                    viewModel.onUseCutout()
                                 }
                                 // 失败时 viewModel.cutoutError 已被设置（含异常详情）
                             }
@@ -799,9 +789,9 @@ private fun ImageUploadScreen(
                 }
 
                 // Step 16：抠图对比控制（已生成抠图时显示）
-                if (compareMode && hasCutout && !processing) {
+                if (hasCutout && !processing) {
                     Spacer(Modifier.height(16.dp))
-                    // 原图 / 抠图 胶囊切换
+                    // 原图 / 抠图 胶囊切换：直接写入展示态，切换即决定最终展示
                     Row(
                         modifier = Modifier
                             .background(
@@ -811,47 +801,17 @@ private fun ImageUploadScreen(
                             .padding(4.dp)
                     ) {
                         SegmentedToggle(
-                            selected = !viewCutout,
+                            selected = viewModel.imageDisplayMode != 1,
                             text = "原图",
-                            onClick = { viewCutout = false },
+                            onClick = { viewModel.onKeepOriginal() },
                             modifier = Modifier.weight(1f)
                         )
                         SegmentedToggle(
-                            selected = viewCutout,
+                            selected = viewModel.imageDisplayMode == 1,
                             text = "抠图",
-                            onClick = { viewCutout = true },
+                            onClick = { viewModel.onUseCutout() },
                             modifier = Modifier.weight(1f)
                         )
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    // 保留原图 / 使用抠图
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        androidx.compose.material3.Button(
-                            onClick = {
-                                viewModel.onKeepOriginal()
-                                compareMode = false
-                                viewCutout = false
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                contentColor = MaterialTheme.colorScheme.onSurface
-                            )
-                        ) { Text("保留原图", fontWeight = FontWeight.Bold) }
-                        androidx.compose.material3.Button(
-                            onClick = {
-                                viewModel.onUseCutout()
-                                compareMode = false
-                                viewCutout = true
-                            },
-                            modifier = Modifier.weight(2f),
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = brand
-                            )
-                        ) { Text("使用抠图", color = Color.White, fontWeight = FontWeight.Bold) }
                     }
                 }
 
@@ -862,16 +822,12 @@ private fun ImageUploadScreen(
                 }
 
                 Spacer(Modifier.height(24.dp))
-                // 确认按钮：确认当前图片/抠图选择（不退出，留在当前页）
-                // 有抠图结果时自动设为「使用抠图」模式；点击右上角「保存」才退出回表单
+                // 确认按钮：确认当前图片/抠图选择并关闭上传页回编辑表单
+                // 展示态已由上方「原图/抠图」切换实时写入 viewModel.imageDisplayMode
                 androidx.compose.material3.Button(
                     onClick = {
-                        // 有抠图结果时，确认即代表选用抠图
-                        if (hasCutout) {
-                            viewModel.onUseCutout()
-                            viewCutout = true
-                        }
-                        // 不调用 onDismiss，留在当前页供用户继续调整或点保存退出
+                        // 确认即完成：关闭上传页，回到编辑表单
+                        onDismiss()
                     },
                     modifier = Modifier.fillMaxWidth(),
                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(

@@ -18,15 +18,17 @@ import com.google.ai.edge.litert.CompiledModel
  * 再叠加贴纸化后处理（白色模切边 + 投影阴影），输出专业贴纸风格的透明 PNG。
  *
  * v2 优化点（对齐 sticker-forge 效果）：
- * - alpha 掩码：γ 校正 + 硬阈值截断，彻底消除背景残留
+ * - alpha 掩码：硬边化 + 形态学闭开 + 最大连通域，主体更实、背景更干净
+ * - 全分辨率合成：alpha 缩放回原始尺寸后套原图 RGB，避免二次缩放失色
  * - 白边：真形态学膨胀（3×3 圆形核），边缘清晰锐利
  * - 阴影：仅边缘带投影（dilated − original），非全区域铺底
  * - 模糊：Stack Blur 替代 BlurMaskFilter，跨版本稳定
  *
  * 管线：
  *   原图 → 缩放至 1024×1024 → ormbg 推理（alpha 掩码）
- *     → γ校正 + 阈值截断 → 缩回原图尺寸 → 合成透明前景
- *       → 白边膨胀描边 + 边缘阴影 → 最终贴纸 Bitmap
+ *     → 硬边化 → 闭运算填洞 → 开运算去噪 → 保留最大连通域
+ *       → alpha 缩放回原始尺寸 → 套原图 RGB 合成透明前景
+ *         → 白边膨胀描边 + 边缘阴影 → 最终贴纸 Bitmap
  *
  * 全程端侧、无联网、不依赖 GMS，国行设备可用。
  * 模型文件 ormbg.tflite（176MB）打包在 app/src/main/assets/。
@@ -40,12 +42,9 @@ object SmartCutoutEngine {
     private const val MODEL_SIZE = 1024
 
     // ── alpha 后处理参数 ──
-    /** γ 校正指数 >1 压暗中间调，让前景/背景分离更干脆 */
-    private const val GAMMA = 1.6f
-    /** 低端硬阈值：alpha 归一化后低于此值的像素强制变全透 */
-    private const val ALPHA_THRESHOLD = 0.12f
-    /** 高端阈值：高于此值的像素强制不透（兜底） */
-    private const val ALPHA_CEILING = 0.92f
+    // 方案 B：窄羽化硬边，浅色主体强制不透明，商品/硬边物品更稳
+    /** 低端硬阈值：alpha 归一化后低于此值的像素强制变全透（当前 0.05，原 0.15/0.10/0.08，便于回退） */
+    private const val ALPHA_THRESHOLD = 0.05f
 
     // ── 贴纸效果参数 ──
     /** 白边宽度（dp）：参考 sticker-forge 的 outline 粗细 */
@@ -99,8 +98,8 @@ object SmartCutoutEngine {
             // 输出：[1, 1, 1024, 1024] alpha matte [0,1]
             val rawAlpha = outBufs[0].readFloat()
 
-            // 5. 后处理：γ校正+阈值 → 缩回原图尺寸 → 合成透明前景
-            val cutout = postprocessAlpha(rawAlpha, scaled, src.width, src.height, MODEL_SIZE, MODEL_SIZE)
+            // 5. 后处理：α 硬边 → 缩回原图尺寸 → 套到原图全分辨率 RGB 上
+            val cutout = postprocessAlpha(rawAlpha, src, src.width, src.height, MODEL_SIZE, MODEL_SIZE)
 
             // 6. 贴纸化：白边 + 边缘阴影
             val density = context.resources.displayMetrics.density
@@ -162,16 +161,17 @@ object SmartCutoutEngine {
     /**
      * 将原始 alpha 掩码转为最终透明前景 Bitmap。
      *
-     * v2 改进流程：
+     * 最终流程：
      * 1. min-max 归一化到 [0,1]
-     * 2. γ 校正（γ>1 压暗中间调，让半透区域更快趋向 0 或 1）
-     * 3. 硬阈值截断：<threshold → 0, >ceiling → 255
-     * 4. 可选：形态学开运算去噪（3×3 核 erode→dilate）
-     * 5. 缩回原图尺寸并用 alpha 合成
+     * 2. 硬边化：v <= 0.10 → 0, v > 0.10 → 255（无过渡带）
+     * 3. 三轮形态学闭运算填主体内部洞 → 开运算去孤立噪点
+     * 4. 保留最大连通域，清除背景误识别孤岛
+     * 5. 仅缩放 alpha 掩码回原图尺寸
+     * 6. 用原图全分辨率 RGB 合成（避免原图被二次缩放失色）
      */
     private fun postprocessAlpha(
         rawAlpha: FloatArray,
-        modelBitmap: Bitmap,
+        src: Bitmap,
         origW: Int,
         origH: Int,
         modelW: Int,
@@ -188,45 +188,60 @@ object SmartCutoutEngine {
         }
         val range = if (max > min) (max - min) else 1f
 
-        // 2. γ 校正 + 硬阈值截断 → 最终 byte alpha [0, 255]
+        // 2. 硬边化：背景全透 / 前景实色（v <= 0.05 全透，v > 0.05 实色，无过渡带）
         val normAlpha = ByteArray(totalPixels)
         for (i in rawAlpha.indices) {
-            // 归一化到 [0, 1]
-            var v = (rawAlpha[i] - min) / range
-            // γ 校正：压暗中间调，让前景/背景分离更干脆
-            v = v.toFloat().pow(GAMMA)
-            // 硬阈值截断
-            if (v < ALPHA_THRESHOLD) v = 0f
-            else if (v > ALPHA_CEILING) v = 1f
-            normAlpha[i] = (v * 255f).toInt().coerceIn(0, 255).toByte()
+            val v = (rawAlpha[i] - min) / range
+            normAlpha[i] = if (v > ALPHA_THRESHOLD) 0xFF.toByte() else 0
         }
 
-        // 3. 形态学开运算去噪（可选，去除孤立噪点）
+        // 3. 形态学处理：四轮闭运算强力填主体内部洞 → 开运算去孤立噪点
+        morphologicalClose(normAlpha, modelW, modelH)
+        morphologicalClose(normAlpha, modelW, modelH)
+        morphologicalClose(normAlpha, modelW, modelH)
+        morphologicalClose(normAlpha, modelW, modelH)
         morphologicalOpen(normAlpha, modelW, modelH)
 
-        // 4. 用 alpha 合成原图像素 → 模型尺寸的透明 Bitmap
-        val modelPixels = IntArray(totalPixels)
-        val srcPixels = IntArray(totalPixels)
-        modelBitmap.getPixels(srcPixels, 0, modelW, 0, 0, modelW, modelH)
-        for (i in modelPixels.indices) {
-            val a = normAlpha[i].toInt() and 0xFF
-            val c = srcPixels[i]
-            modelPixels[i] = (a shl 24) or (c and 0x00FFFFFF)
-        }
-        val modelCutout = Bitmap.createBitmap(modelPixels, modelW, modelH, Bitmap.Config.ARGB_8888)
+        // 4. 只保留最大连通域，去掉背景误识别的小孤岛（如自行车顶部多余块）
+        keepLargestConnectedComponent(normAlpha, modelW, modelH)
 
-        // 5. 反向 letterbox：裁切有效区域并缩回原图尺寸
+        // 5. 把 model 尺寸 alpha 掩码转成 Bitmap，只保留 A 通道（RGB 占位）
+        val alphaPixels = IntArray(totalPixels)
+        for (i in 0 until totalPixels) {
+            val a = normAlpha[i].toInt() and 0xFF
+            alphaPixels[i] = (a shl 24) or 0x00FFFFFF
+        }
+        val alphaBitmap = Bitmap.createBitmap(alphaPixels, modelW, modelH, Bitmap.Config.ARGB_8888)
+
+        // 6. 反向 letterbox：裁切有效区域并把 alpha 单独缩放回原始尺寸
         val ratio = minOf(modelW.toFloat() / origW, modelH.toFloat() / origH)
         val actualW = (origW * ratio).toInt()
         val actualH = (origH * ratio).toInt()
         val cropLeft = (modelW - actualW) / 2
         val cropTop = (modelH - actualH) / 2
 
-        val cropped = Bitmap.createBitmap(modelCutout, cropLeft, cropTop, actualW, actualH)
-        val result = Bitmap.createScaledBitmap(cropped, origW, origH, true)
+        val croppedAlpha = Bitmap.createBitmap(alphaBitmap, cropLeft, cropTop, actualW, actualH)
+        val fullAlpha = Bitmap.createScaledBitmap(croppedAlpha, origW, origH, true)
 
-        if (modelCutout !== result) modelCutout.recycle()
-        if (cropped !== result) cropped.recycle()
+        // 7. 读取原图全分辨率 RGB 和缩放后的 alpha
+        val origPixels = IntArray(origW * origH)
+        src.getPixels(origPixels, 0, origW, 0, 0, origW, origH)
+
+        val scaledAlphaPixels = IntArray(origW * origH)
+        fullAlpha.getPixels(scaledAlphaPixels, 0, origW, 0, 0, origW, origH)
+
+        // 8. 用原始 RGB 合成最终透明前景（避免原图被缩放到 1024 再放大导致的柔化/失色）
+        val resultPixels = IntArray(origW * origH)
+        for (i in resultPixels.indices) {
+            val a = (scaledAlphaPixels[i] ushr 24) and 0xFF
+            resultPixels[i] = (a shl 24) or (origPixels[i] and 0x00FFFFFF)
+        }
+        val result = Bitmap.createBitmap(resultPixels, origW, origH, Bitmap.Config.ARGB_8888)
+
+        // 回收中间 Bitmap
+        if (alphaBitmap !== result) alphaBitmap.recycle()
+        if (croppedAlpha !== result) croppedAlpha.recycle()
+        if (fullAlpha !== result) fullAlpha.recycle()
         return result
     }
 
@@ -263,10 +278,101 @@ object SmartCutoutEngine {
         }
     }
 
-    /** Kotlin stdlib 没有 Float.pow(Float)，手动实现 */
-    private fun Float.pow(exp: Float): Float {
-        return Math.pow(this.toDouble(), exp.toDouble()).toFloat()
+    /** 对 byte alpha 掩码做形态学闭运算（先膨胀后腐蚀，填补主体内部小洞） */
+    private fun morphologicalClose(alpha: ByteArray, w: Int, h: Int) {
+        // 3×3 十字核膨胀
+        val dilated = ByteArray(alpha.size)
+        for (y in 1 until h - 1) {
+            for (x in 1 until w - 1) {
+                val idx = y * w + x
+                var maxVal = 0
+                for (dy in -1..1) {
+                    for (dx in -1..1) {
+                        val v = alpha[(y + dy) * w + (x + dx)].toInt() and 0xFF
+                        if (v > maxVal) maxVal = v
+                    }
+                }
+                dilated[idx] = maxVal.toByte()
+            }
+        }
+        // 3×3 十字核腐蚀
+        for (y in 1 until h - 1) {
+            for (x in 1 until w - 1) {
+                val idx = y * w + x
+                var minVal = 0xFF
+                for (dy in -1..1) {
+                    for (dx in -1..1) {
+                        val v = dilated[(y + dy) * w + (x + dx)].toInt() and 0xFF
+                        if (v < minVal) minVal = v
+                    }
+                }
+                alpha[idx] = minVal.toByte()
+            }
+        }
     }
+
+    /** 只保留最大连通域，清除所有小孤岛（背景误识别或前景碎片） */
+    private fun keepLargestConnectedComponent(alpha: ByteArray, w: Int, h: Int) {
+        val visited = BooleanArray(alpha.size)
+        val label = IntArray(alpha.size) { -1 }
+        val areas = mutableListOf<Int>()
+        val queue = ArrayDeque<Pair<Int, Int>>()
+
+        for (startY in 0 until h) {
+            for (startX in 0 until w) {
+                val startIdx = startY * w + startX
+                if ((alpha[startIdx].toInt() and 0xFF) == 0 || visited[startIdx]) continue
+
+                var area = 0
+                queue.addLast(startX to startY)
+                visited[startIdx] = true
+
+                while (queue.isNotEmpty()) {
+                    val (x, y) = queue.removeFirst()
+                    val idx = y * w + x
+                    label[idx] = areas.size
+                    area++
+
+                    if (x > 0) {
+                        val nIdx = idx - 1
+                        if (!visited[nIdx] && (alpha[nIdx].toInt() and 0xFF) > 0) {
+                            visited[nIdx] = true
+                            queue.addLast((x - 1) to y)
+                        }
+                    }
+                    if (x < w - 1) {
+                        val nIdx = idx + 1
+                        if (!visited[nIdx] && (alpha[nIdx].toInt() and 0xFF) > 0) {
+                            visited[nIdx] = true
+                            queue.addLast((x + 1) to y)
+                        }
+                    }
+                    if (y > 0) {
+                        val nIdx = idx - w
+                        if (!visited[nIdx] && (alpha[nIdx].toInt() and 0xFF) > 0) {
+                            visited[nIdx] = true
+                            queue.addLast(x to (y - 1))
+                        }
+                    }
+                    if (y < h - 1) {
+                        val nIdx = idx + w
+                        if (!visited[nIdx] && (alpha[nIdx].toInt() and 0xFF) > 0) {
+                            visited[nIdx] = true
+                            queue.addLast(x to (y + 1))
+                        }
+                    }
+                }
+                areas.add(area)
+            }
+        }
+
+        if (areas.size <= 1) return
+        val keepLabel = areas.indices.maxByOrNull { areas[it] } ?: return
+        for (i in alpha.indices) {
+            if (label[i] != keepLabel) alpha[i] = 0
+        }
+    }
+
 
     // ══════════════════════════════════════════════════════════
     //  贴纸化：白边 + 边缘阴影（v2 重写）
