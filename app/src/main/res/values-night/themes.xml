@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色模式：仅覆盖窗口背景为深色，避免启动白闪。 -->
+    <style name="Theme.Wuji" parent="Theme.Material3.DayNight">
+        <item name="android:windowBackground">#121212</item>
+    </style>
+</resources>

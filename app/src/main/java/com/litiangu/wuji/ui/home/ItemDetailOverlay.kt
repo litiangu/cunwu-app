@@ -24,6 +24,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontStyle
+import kotlin.math.abs
 import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.ui.designsystem.categoryVisual
 import com.litiangu.wuji.ui.home.PRIVACY_MASK
@@ -39,7 +41,7 @@ import java.util.Locale
  *
  * 全屏遮罩（点击关闭）+ 中央 24dp 圆角白卡：
  * 右上 分类徽章 + 状态点 + × 关闭；
- * 中央大图位（无图 → 分类图标占位）；名称 + 购入价大字 + 日均胶囊；
+ * 中央大图位（无图 → 分类图标占位）；名称 + 最终金额大字 + 日均；有附加/收益时下方小字显示购入价与红绿角标；
  * 三项数据横排等分：陪伴天数 / 购入日期 / 状态。
  */
 @Composable
@@ -142,21 +144,19 @@ fun ItemDetailOverlay(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(6.dp))
-            // 价格 + 日均同一水平（日均在右侧，加大样式）
-            Row(verticalAlignment = Alignment.Bottom) {
+            // 价格块：最终金额 + /购入价 + 红/绿角标 + 日均
+            if (privacyMasked) {
                 Text(
-                    text = if (privacyMasked) PRIVACY_MASK else "¥%,.0f".format(item.purchasePrice),
+                    text = PRIVACY_MASK,
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 1,
+                    softWrap = false,
                 )
-                Text(
-                    text = "日均 " + if (privacyMasked) PRIVACY_MASK else "¥%.2f/天".format(dailyDepreciation(item)),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            } else {
+                ItemDetailAmount(item)
             }
             Spacer(Modifier.height(WujiSpace.lg))
             // 三项数据：图标 / 标签（陪伴·购入·状态）/ 数值（385天·日期·使用中）
@@ -213,6 +213,88 @@ private fun DetailCell(
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
         )
+    }
+}
+
+
+/**
+ * 详情浮层价格块（上下两行结构，避免不同字号 Text bounds 对齐导致的视觉错位）：
+ * - 上行：最终金额 + /购入价 + 红/绿斜体角标全部在同一行，按顶部 bounds 对齐（Top）。
+ *   /购入价与最终金额同字号（displaySmall），仅颜色淡化。
+ * - 下行：仅显示日均（titleMedium），左对齐。
+ * - 无附加/收益：不显示 /购入价 与角标，仅显示最终金额与日均。
+ * - 角标符号：净值变化 delta = 最终金额 − 购入价 = 附加 − 收益；> 0（净附加）→ 红色斜体 +¥|delta|；< 0（净收益）→ 绿色斜体 −¥|delta|。
+ */
+@Composable
+private fun ItemDetailAmount(item: ItemUiModel) {
+    val base = item.purchasePrice
+    val extra = item.addPrice      // 附加费用
+    val gain = item.soldPrice      // 收益金额
+    val finalAmount = base + extra - gain
+    val delta = finalAmount - base
+    val hasAdjustment = extra > 0 || gain > 0
+    val dailyText = "日均 " + "¥%.2f/天".format(dailyDepreciation(item))
+
+    // 行1：最终金额 + 日均（有无附加均一致）
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Text(
+            text = "¥%,.2f".format(finalAmount),
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            softWrap = false,
+        )
+        Text(
+            text = dailyText,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
+    // 行2：仅在有附加/收益时显示，左购入价淡化 + 右红/绿角标
+    if (hasAdjustment) {
+        Spacer(modifier = Modifier.height(2.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = "/¥%,.2f".format(base),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                maxLines = 1,
+                softWrap = false,
+            )
+            val absDelta = abs(delta)
+            when {
+                delta > 0 -> Text(
+                    text = "+¥%,.2f".format(absDelta),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
+                    fontStyle = FontStyle.Italic,
+                    color = Color(0xFFE53935),
+                    maxLines = 1,
+                    softWrap = false,
+                )
+                delta < 0 -> Text(
+                    text = "-¥%,.2f".format(absDelta),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
+                    fontStyle = FontStyle.Italic,
+                    color = Color(0xFF52C41A),
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
+        }
     }
 }
 
