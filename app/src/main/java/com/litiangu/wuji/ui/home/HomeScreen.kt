@@ -694,7 +694,7 @@ private fun HomeEmptyState(
     modifier: Modifier = Modifier,
 ) {
     val (title, sub) = when {
-        globalEmpty -> "一张空白的画布等待着我们" to "点击底部的\"+\"号，开启您的第一条物记"
+        globalEmpty -> "一张空白的画布等待着我们" to "点击底部的\"+\"号，开启您的第一条物品记录"
         keyword.isNotEmpty() -> "没有找到「$keyword」相关的物品" to "换个关键词或清空筛选试试"
         isCategoryFiltered -> "当前分类下还没有物品" to "试着切换其他分类或新增一件"
         else -> "这里空空如也" to "换个筛选条件试试"

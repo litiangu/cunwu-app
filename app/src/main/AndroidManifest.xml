@@ -6,9 +6,11 @@
     <application
         android:name=".WujiApplication"
         android:allowBackup="true"
-        android:label="物记 Wuji"
+        android:icon="@mipmap/ic_launcher"
+        android:label="存物"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Material3.DayNight">
+        android:theme="@style/Theme.Wuji">
         <activity
             android:name=".MainActivity"
             android:exported="true">

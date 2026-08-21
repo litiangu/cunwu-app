@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 原始基础主题（工程本地定义），Manifest 与 Theme.Wuji 的父。 -->
     <style name="Theme.Material3.DayNight" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">?attr/colorPrimary</item>
         <item name="android:windowBackground">@color/window_background</item>
     </style>
+
+    <!-- 启动与运行统一主题：浅色沿用基础主题，深色在 values-night 覆盖窗口背景防白闪。 -->
+    <style name="Theme.Wuji" parent="Theme.Material3.DayNight" />
 </resources>

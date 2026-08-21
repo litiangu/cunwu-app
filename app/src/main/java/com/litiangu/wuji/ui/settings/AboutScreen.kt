@@ -1,5 +1,6 @@
 package com.litiangu.wuji.ui.settings
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -26,18 +27,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.litiangu.wuji.BuildConfig
+import com.litiangu.wuji.R
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
 
 /**
  * 关于页（Step 24，纯展示，无 ViewModel）。
  *
- * 顶栏「关于」+ 应用标识 Hero（物记 / 版本）+ 声明卡：
- * 1. 关于物记：一句话定位。
+ * 顶栏「关于」+ 应用标识 Hero（存物 / 版本）+ 声明卡：
+ * 1. 关于存物：一句话定位。
  * 2. 数据隐私：本地存储、不上传声明。
  * 3. 法律与许可（Step 27）：用户协议 / 开源许可两个可点击入口，进入本地全屏内容页。
  *
@@ -122,25 +125,24 @@ fun AboutScreen(
             ) {
                 Spacer(Modifier.height(WujiSpace.lg))
 
-                // 应用标识：主色圆 + 「物」字 + 名称 + 版本。
+                // 应用标识：白底 logo + 名称 + 版本。
                 Box(
                     modifier = Modifier
                         .size(96.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
+                        .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = "物",
-                        fontSize = 48.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimary,
+                    Image(
+                        painter = painterResource(R.drawable.ic_launcher_foreground),
+                        contentDescription = null,
+                        modifier = Modifier.size(72.dp),
                     )
                 }
                 Spacer(Modifier.height(WujiSpace.md))
                 // headline-md：Manrope 20sp / 600（DESIGN.md typography.headline-md）
                 Text(
-                    text = "物记",
+                    text = "存物",
                     fontSize = 24.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -154,11 +156,11 @@ fun AboutScreen(
 
                 Spacer(Modifier.height(WujiSpace.xl))
 
-                // 卡 1：关于物记（一句话定位）。
+                // 卡 1：关于存物（一句话定位）。
                 AboutCard {
                     AboutStatement(
                         icon = Icons.Filled.Inventory2,
-                        title = "关于物记",
+                        title = "关于存物",
                         body = "本地物品管理，辅助断舍离决策。",
                     )
                 }
@@ -170,7 +172,7 @@ fun AboutScreen(
                     AboutStatement(
                         icon = Icons.Filled.Lock,
                         title = "数据隐私",
-                        body = "所有数据仅保存在本机，不会上传任何服务器。",
+                        body = "所有数据仅保存在本机，不会上传。",
                     )
                 }
 
@@ -191,7 +193,7 @@ fun AboutScreen(
 
                 Spacer(Modifier.height(WujiSpace.xl))
                 Text(
-                    text = "© 2026 物记 Wuji",
+                    text = "© 2026 存物",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -278,9 +280,9 @@ private fun UserAgreementContent() {
     val paragraphStyle = MaterialTheme.typography.bodyMedium
     val headingStyle = MaterialTheme.typography.titleMedium
 
-    Text("欢迎使用物记", style = headingStyle, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+    Text("欢迎使用存物", style = headingStyle, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
     Spacer(Modifier.height(WujiSpace.md))
-    LegalParagraph("物记（Wuji）是一款完全在您本机运行的本地物品管理工具，用于记录家中物品、以健康分辅助断舍离决策。")
+    LegalParagraph("存物是一款完全在您本机运行的本地物品管理工具，用于记录家中物品、以健康分辅助断舍离决策。")
     LegalParagraph("一、数据本地化。您录入的所有物品信息、图片、预算与偏好均仅存储于本机数据库与 DataStore，不会上传任何服务器，我们也无法访问。")
     LegalParagraph("二、备份与导出。数据备份与导出文件由您自行管理，请妥善保管，避免设备丢失或文件泄露导致的信息外泄。")
     LegalParagraph("三、无第三方账号。本应用不要求注册账号，不与任何第三方共享您的数据。")
