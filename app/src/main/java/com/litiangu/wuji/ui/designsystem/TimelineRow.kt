@@ -162,7 +162,7 @@ fun TimelineRow(
                     Spacer(Modifier.width(WujiSpace.md))
                     Column {
                         Text(
-                            text = if (privacyMasked) PRIVACY_MASK else "¥%,.0f".format(item.netAsset),
+                            text = if (privacyMasked) PRIVACY_MASK else "¥%,.2f".format(item.netAsset),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,

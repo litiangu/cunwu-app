@@ -99,7 +99,7 @@ fun ItemGridCard(
                 horizontalArrangement = Arrangement.spacedBy(WujiSpace.xs),
             ) {
                 Text(
-                    text = if (privacyMasked) PRIVACY_MASK else "¥%,.0f".format(item.purchasePrice),
+                    text = if (privacyMasked) PRIVACY_MASK else "¥%,.2f".format(item.netAsset),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -188,7 +188,7 @@ fun ItemCompactCell(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            text = if (privacyMasked) PRIVACY_MASK else "¥%,.0f".format(item.purchasePrice),
+            text = if (privacyMasked) PRIVACY_MASK else "¥%,.2f".format(item.netAsset),
             style = MaterialTheme.typography.labelMedium,
             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
