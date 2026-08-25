@@ -32,8 +32,10 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -48,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,6 +75,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.litiangu.wuji.domain.DIMENSION_WEIGHTS
 import com.litiangu.wuji.ui.designsystem.categoryDotColor
 import com.litiangu.wuji.ui.designsystem.fireHapticIfEnabled
 import com.litiangu.wuji.ui.home.PRIVACY_MASK
@@ -89,6 +93,7 @@ import com.litiangu.wuji.ui.theme.LocalWujiDarkTheme
 import com.litiangu.wuji.ui.theme.WujiRadius
 import java.util.Calendar
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /**
  * 分析页（Step 32 重设计，对齐 4.0 设计稿；Step 33 底部避让 + 排行榜领奖台）：
@@ -118,6 +123,9 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
         animationSpec = tween(durationMillis = 600),
         label = "refreshSpin",
     )
+    // 滚动状态上提（Step 37）：超支警示条点击后滚动到底部预算卡
+    val scrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -126,7 +134,7 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(padding),
         ) {
             // ===== 顶栏：物品分析 + 刷新圆钮（4.0 设计稿形态，无返回箭头）=====
@@ -177,8 +185,13 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     HealthCard(state)                                   // 纯结果，无金额，不接 privacyMasked
+                    OverBudgetBanner(state, privacyMasked) {
+                        // 点击滚动到底部预算卡（预算卡是最后一张，滚到底即达）
+                        scope.launch { scrollState.animateScrollTo(scrollState.maxValue) }
+                    }
                     HonorCard(state.honors, privacyMasked)
                     AssetsCard(state, privacyMasked)
+                    RecentChangesCard(state, privacyMasked)
                     CategoryDistributionCard(state, privacyMasked)
                     TrendCard(state, privacyMasked)
                     BudgetCard(state, privacyMasked)
@@ -354,6 +367,8 @@ private fun HealthCard(state: AnalysisUiState) {
                     }
                 }
             }
+            // 行 1.5：四维拆解条（Step 36，默认展开；最弱维度高亮，回答「为什么是这个分」）
+            DimensionBars(state)
             // 行 2：行动出口（最弱维度提示）
             if (state.weakestHint.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -370,6 +385,82 @@ private fun HealthCard(state: AnalysisUiState) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+        }
+    }
+}
+
+// 四维拆解条（Step 36；Step 37 审计修复改贡献度视角）：
+// 条长 = 子分比例（0~100），行尾数字 = 贡献分（子分 × 权重取整），直接回答「为什么是这个分」，
+// 消除「91 分但流转率 0」的认知矛盾。权重读 HealthScore.DIMENSION_WEIGHTS 单点真相，禁止硬编码。
+// 最弱维度实心 primary 高亮，其余 35% 透明。
+@Composable
+private fun DimensionBars(state: AnalysisUiState) {
+    val dims = listOf(
+        "利用率" to state.d1,
+        "价值健康" to state.d2,
+        "流转率" to state.d3,
+        "变现回收" to state.d4,
+    )
+    val minScore = dims.minOf { it.second }
+    val trackColor = MaterialTheme.colorScheme.surfaceContainerLow
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "维度拆解",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "贡献分 = 子分 × 权重",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        dims.forEachIndexed { index, (label, score) ->
+            val weakest = score <= minScore
+            val barColor = if (weakest) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+            }
+            val labelColor = if (weakest) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            val scoreColor = if (weakest) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = labelColor,
+                    modifier = Modifier.width(60.dp),
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(trackColor)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth((score / 100.0).toFloat().coerceIn(0f, 1f))
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(barColor)
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "+${(score * DIMENSION_WEIGHTS[index]).roundToInt()}",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = scoreColor,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.width(32.dp),
+                )
             }
         }
     }
@@ -404,10 +495,10 @@ private fun HonorCard(honors: Honors, privacyMasked: Boolean) {
                 height = 164.dp,
                 iconSize = 52.dp,
                 imagePath = honors.highestDailyValue?.imagePath,
-                primaryLabel = "日均价值最高",
+                primaryLabel = "日均成本最高",
                 name = honors.highestDailyValue?.name ?: "—",
                 primaryText = if (privacyMasked) PRIVACY_MASK else (honors.highestDailyValue?.primaryText ?: "—"),
-                primaryColor = MaterialTheme.colorScheme.primary,
+                primaryColor = GradeFairLight,
                 showMedal = false,
             )
             HonorPod(
@@ -522,34 +613,90 @@ private fun HonorPod(
     }
 }
 
-// ===== 资产结构卡：总投入 / 已变现 / 净持有（文档 §2.3 口径）=====
+// ===== 资产结构卡：总投入 / 已变现 / 净持有（文档 §2.3 口径）+ 堆叠比例条 + 回收率（Step 36）=====
 @Composable
 private fun AssetsCard(state: AnalysisUiState, privacyMasked: Boolean) {
     AnalysisCardBox {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            AnalysisSectionLabel("资产结构")
+            // 标签行 + 回收率（Step 36；Step 37 分色：<20% 灰 / 20~50% 黄 / >50% 绿——颜色不再说谎）
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                AnalysisSectionLabel("资产结构", modifier = Modifier.weight(1f))
+                if (state.totalInput > 0) {
+                    val recoveryPct = state.totalRecovery / state.totalInput * 100
+                    val recoveryColor = when {
+                        recoveryPct >= 50 -> GradeExcellentLight
+                        recoveryPct >= 20 -> GradeFairLight
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    Text(
+                        "回收率 ${recoveryPct.roundToInt()}%",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = recoveryColor,
+                    )
+                }
+            }
             AssetRow(
                 "总投入",
                 if (privacyMasked) PRIVACY_MASK else formatYuan(state.totalInput),
                 emphasized = false,
+                dotColor = null,
             )
             AssetRow(
                 "已变现",
                 if (privacyMasked) PRIVACY_MASK else formatYuan(state.totalRecovery),
                 emphasized = false,
+                dotColor = GradeExcellentLight,
             )
             AssetRow(
                 "净持有",
                 if (privacyMasked) PRIVACY_MASK else formatYuan(state.netHolding),
                 emphasized = true,
+                dotColor = MaterialTheme.colorScheme.primary,
             )
+            // 堆叠比例条（Step 36）：总投入=100%，绿段=已变现 + 橙段=净持有；与上行色点对应
+            if (state.totalInput > 0) {
+                val recoveryFrac = (state.totalRecovery / state.totalInput).toFloat().coerceIn(0f, 1f)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow),
+                ) {
+                    if (recoveryFrac > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .weight(recoveryFrac)
+                                .fillMaxHeight()
+                                .background(GradeExcellentLight)
+                        )
+                    }
+                    if (recoveryFrac < 1f) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f - recoveryFrac)
+                                .fillMaxHeight()
+                                .background(MaterialTheme.colorScheme.primary)
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun AssetRow(label: String, value: String, emphasized: Boolean) {
+private fun AssetRow(label: String, value: String, emphasized: Boolean, dotColor: Color? = null) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        if (dotColor != null) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(dotColor)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
         Text(
             label,
             style = MaterialTheme.typography.bodyMedium,
@@ -564,6 +711,114 @@ private fun AssetRow(label: String, value: String, emphasized: Boolean) {
                 fontWeight = FontWeight.Bold,
             ),
             color = if (emphasized) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+// ===== 最近变动（Step 36）：买入/卖出流水，诊断视角（钱物如何流入流出）=====
+// 买入 -¥（onSurface 中性深色）/ 卖出 +¥（绿=回血正向）；支出不用红，避免与预算卡「红=超支」语义冲突。
+@Composable
+private fun RecentChangesCard(state: AnalysisUiState, privacyMasked: Boolean) {
+    if (state.recentChanges.isEmpty()) return
+    AnalysisCardBox {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text(
+                "最近变动",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            state.recentChanges.forEach { change ->
+                RecentChangeRow(change, privacyMasked)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentChangeRow(change: RecentChange, privacyMasked: Boolean) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // 物品图 40dp 圆角底；无图占位
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerLow),
+            contentAlignment = Alignment.Center,
+        ) {
+            val bitmap = decodeImagePath(change.imagePath)
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = change.name,
+                    modifier = Modifier.size(34.dp),
+                    contentScale = ContentScale.Fit,
+                )
+            } else {
+                Icon(
+                    Icons.Filled.BrokenImage,
+                    null,
+                    tint = MaterialTheme.colorScheme.outlineVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                change.name,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // 分类 chip：色点 + 名称
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = RoundedCornerShape(WujiRadius.pill),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(categoryDotColorAware(change.categoryKey))
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            change.categoryLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    change.dateLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Text(
+            if (privacyMasked) {
+                PRIVACY_MASK
+            } else {
+                "${if (change.isIncome) "+" else "-"}¥%,.0f".format(change.amount)
+            },
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+            color = if (change.isIncome) GradeExcellentLight else MaterialTheme.colorScheme.onSurface,
         )
     }
 }
@@ -964,6 +1219,50 @@ private fun MomBadge(trend: List<TrendPoint>) {
     }
 }
 
+// 超支警示条（Step 37）：超支时前置到健康卡下方，解决「最重要的红色信号沉底在第 8 张卡」。
+// errorContainer 语义红底（主题令牌，深色自动翻转）；隐私模式隐藏金额；点击滚动到底部预算卡。
+// 未超支 / 未配置预算时不渲染（复用 Step 29 首页提示行的条件渲染模式）。
+@Composable
+private fun OverBudgetBanner(state: AnalysisUiState, privacyMasked: Boolean, onClick: () -> Unit) {
+    val visible = state.monthlyBudget > 0 && state.recentSpend30 > state.monthlyBudget
+    if (!visible) return
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+        ) {
+            Icon(
+                Icons.Filled.Warning,
+                null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                if (privacyMasked) {
+                    "近30天支出已超预算，点击查看"
+                } else {
+                    "近30天支出已超预算 ¥%,.0f，点击查看".format(state.recentSpend30 - state.monthlyBudget)
+                },
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                Icons.Filled.KeyboardArrowRight,
+                null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+    }
+}
+
 // ===== 预算遵从卡（Step 21 原样保留，仅位置挪到底部最后一张）=====
 @Composable
 private fun BudgetCard(state: AnalysisUiState, privacyMasked: Boolean = false) {
@@ -983,14 +1282,14 @@ private fun BudgetCard(state: AnalysisUiState, privacyMasked: Boolean = false) {
                 color = MaterialTheme.colorScheme.onSurface,
             )
 
-            // 全局月度比对（仅配置了全局月度预算才显示本段）
+            // 近 30 天滚动口径比对（Step 37 文案勘误：原「本月支出」实为 recentSpend30 近30天口径）
             if (state.monthlyBudget > 0) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        "本月支出 ${if (privacyMasked) PRIVACY_MASK else formatYuan(state.recentSpend30)}",
+                        "近30天支出 ${if (privacyMasked) PRIVACY_MASK else formatYuan(state.recentSpend30)}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -1046,7 +1345,7 @@ private fun BudgetCard(state: AnalysisUiState, privacyMasked: Boolean = false) {
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 }
-                // 徽标 + 日均可花（Step 35）=（月预算 − 近30天支出）/ 当月剩余天数；超支改显「超出 ¥x」
+                // 徽标 + 日均可花（Step 35）=（月预算 − 近30天支出）/ 当月剩余天数；超支改显「已用 N% · 超出 ¥x」（Step 37）
                 val cal = Calendar.getInstance()
                 val daysLeft = (cal.getActualMaximum(Calendar.DAY_OF_MONTH) - cal.get(Calendar.DAY_OF_MONTH)).coerceAtLeast(1)
                 val remaining = state.monthlyBudget - state.recentSpend30
@@ -1068,8 +1367,14 @@ private fun BudgetCard(state: AnalysisUiState, privacyMasked: Boolean = false) {
                             fontWeight = FontWeight.SemiBold,
                         )
                     } else {
+                        // 超支幅度可感（Step 37）：「已用 N%」比满红条直观；%% 转义字面百分号
+                        val overPct = (state.recentSpend30 / state.monthlyBudget * 100).roundToInt()
                         Text(
-                            "超出 ${if (privacyMasked) PRIVACY_MASK else formatYuan(-remaining)}",
+                            if (privacyMasked) {
+                                "已用 $overPct% · 超出 $PRIVACY_MASK"
+                            } else {
+                                "已用 $overPct%% · 超出 ¥%,.0f".format(-remaining)
+                            },
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.SemiBold,

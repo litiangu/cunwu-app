@@ -27,13 +27,25 @@ data class TrendPoint(val label: String, val amount: Double, val itemDelta: Int)
 // 分类预算一行：分类名 + 近 30 天支出 + 该类月度限额 + 是否超支（Step 21 L2）
 data class CategoryBudgetRow(val label: String, val spend: Double, val limit: Double, val over: Boolean)
 
+// 最近变动一条（Step 36）：买入/卖出流水事件（诊断视角：钱物如何流入流出）
+data class RecentChange(
+    val itemId: Long,
+    val name: String,
+    val imagePath: String?,       // 展示态路径（抠图优先），null = 无图占位
+    val categoryKey: String,      // 分类色 key（驱动色点）
+    val categoryLabel: String,
+    val dateLabel: String,        // 今天/昨天/N天前/M月d日
+    val amount: Double,           // 买入 = 购入+附加；卖出 = 收益
+    val isIncome: Boolean,        // true = 卖出回血（+），false = 买入（-）
+)
+
 // 物品荣誉一项（文档 §2.1）
 data class HonorItem(
     val itemId: Long,
     val name: String,
     val imagePath: String? = null,       // 展示态路径（抠图优先），null = 无图占位
     val primaryText: String,             // "390 Days" / "¥23.1/天" / "+¥2,300" / "2026.07"
-    val primaryLabel: String,            // "陪伴最久" / "日均价值最高" / "收益最高" / 退化 "最新入手"
+    val primaryLabel: String,            // "陪伴最久" / "日均成本最高" / "收益最高" / 退化 "最新入手"
 )
 
 // 物品荣誉三联（文档 §2.1 三维度评选）
@@ -67,6 +79,7 @@ data class AnalysisUiState(
     val itemTotalCount: Int = 0,            // 全物品数（含售出），驱动「N items」徽章
     val honors: Honors = Honors(),          // 物品荣誉三联
     val weakestHint: String = "",           // 行动出口：最弱维度一句话提示（文档 §2.4）
+    val recentChanges: List<RecentChange> = emptyList(), // 最近变动流水（Step 36）
 )
 
 /**
@@ -135,6 +148,7 @@ internal fun buildAnalysisUiState(
         categoryBudgetRows = categoryBudgetRows,
         itemTotalCount = items.size,
         honors = buildHonors(items),
+        recentChanges = buildRecentChanges(items, nameById),
         weakestHint = weakestHint(
             result.dimensions.d1Usage,
             result.dimensions.d2ValueHealth,
@@ -196,14 +210,18 @@ internal fun buildHonors(items: List<ItemEntity>): Honors {
             )
         }
 
-    val highestDaily = items.maxByOrNull { it.purchasePrice / maxOf(1, daysOf(it)) }
+    // 日均成本最高（Step 37 审计修复）：加陪伴 ≥7 天门槛——刚买入的物品日均成本必然爆表，
+    // 无门槛时该位置被新物品垄断且「成本」冒充「价值」；无合格者返回 null（pod 显 —）。
+    val highestDaily = items
+        .filter { daysOf(it) >= 7 }
+        .maxByOrNull { it.purchasePrice / maxOf(1, daysOf(it)) }
         ?.let {
             val daily = it.purchasePrice / maxOf(1, daysOf(it))
             HonorItem(
                 itemId = it.id, name = it.name,
                 imagePath = displayImagePathOf(it),
-                primaryText = "¥%.1f/天".format(daily),
-                primaryLabel = "日均价值最高",
+                primaryText = "¥%,.0f/天".format(daily),
+                primaryLabel = "日均成本最高",
             )
         }
 
@@ -230,6 +248,51 @@ internal fun buildHonors(items: List<ItemEntity>): Honors {
     return Honors(longest, highestDaily, highestRecovery)
 }
 
+// 最近变动流水（Step 36）：买入事件（全部物品，purchaseDate 落点）+ 卖出事件（SOLD 且收益>0，updatedAt 落点），
+// 合并按时间倒序取 5 条。零新表，纯内存推导。
+private const val DAY_MS = 86_400_000L
+
+internal fun buildRecentChanges(
+    items: List<ItemEntity>,
+    nameById: Map<Long, CategoryEntity>,
+): List<RecentChange> {
+    if (items.isEmpty()) return emptyList()
+    val now = System.currentTimeMillis()
+    fun dateLabelOf(millis: Long): String {
+        val days = ((now - millis) / DAY_MS).coerceAtLeast(0L)
+        return when {
+            days == 0L -> "今天"
+            days == 1L -> "昨天"
+            days <= 30L -> "${days}天前"
+            else -> {
+                val c = Calendar.getInstance().apply { timeInMillis = millis }
+                "${c.get(Calendar.MONTH) + 1}月${c.get(Calendar.DAY_OF_MONTH)}日"
+            }
+        }
+    }
+    val events: List<Pair<Long, RecentChange>> = items.flatMap { item ->
+        val cat = nameById[item.categoryId]
+        val key = cat?.colorKey ?: "custom"
+        val label = cat?.name ?: "未分类"
+        val buy = item.purchaseDate to RecentChange(
+            itemId = item.id, name = item.name, imagePath = displayImagePathOf(item),
+            categoryKey = key, categoryLabel = label,
+            dateLabel = dateLabelOf(item.purchaseDate),
+            amount = item.purchasePrice + item.extraCost, isIncome = false,
+        )
+        val sell = if (item.status == ItemStatus.SOLD && item.resaleValue > 0) {
+            item.updatedAt to RecentChange(
+                itemId = item.id, name = item.name, imagePath = displayImagePathOf(item),
+                categoryKey = key, categoryLabel = label,
+                dateLabel = dateLabelOf(item.updatedAt),
+                amount = item.resaleValue, isIncome = true,
+            )
+        } else null
+        listOfNotNull(buy, sell)
+    }
+    return events.sortedByDescending { it.first }.take(5).map { it.second }
+}
+
 internal fun displayImagePathOf(item: ItemEntity): String? =
     if (item.imageDisplayMode == 1 && item.croppedImagePath != null) item.croppedImagePath else item.imagePath
 
@@ -239,8 +302,9 @@ internal fun weakestHint(d1: Double, d2: Double, d3: Double, d4: Double): String
     return when (min) {
         d1 -> "利用率偏低，建议处理闲置物品"
         d2 -> "持有成本偏高，建议评估高成本闲置物"
-        d3 -> "流转率偏低，考虑出售回血"
-        else -> "回收率偏低，考虑二手变现"
+        // d3/d4 权重仅 5%（微调项），提示措辞避免夸大其影响（Step 37 审计）
+        d3 -> "流转率偏低（权重较小），有余力可出售回血"
+        else -> "回收率偏低（权重较小），可考虑二手变现"
     }
 }
 

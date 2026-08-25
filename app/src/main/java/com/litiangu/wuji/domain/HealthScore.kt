@@ -66,6 +66,14 @@ private const val W_D2 = 0.40   // 价值健康度（主导）
 private const val W_D3 = 0.05   // 流转率（微调）
 private const val W_D4 = 0.05   // 变现回收（微调）
 
+/**
+ * 维度权重公开常量（Step 37）：供分析页拆解条「贡献分 = 子分 × 权重」展示用。
+ * 单点真相：UI 从这里读权重，算法调权时 UI 自动跟随（Step 36 曾因 UI 侧硬编码
+ * 过期文档权重 40/30/15/15 导致标注错误，教训见 37_分析页审计修复.md §1）。
+ * 顺序：利用率 / 价值健康度 / 流转率 / 变现回收，与 DimensionScores 字段一一对应。
+ */
+val DIMENSION_WEIGHTS = listOf(W_D1, W_D2, W_D3, W_D4)
+
 // 封顶
 private const val D3_CAP = 0.50 // 流转率封顶 50%
 private const val D4_CAP = 0.60 // 变现回收封顶 60%
