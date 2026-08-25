@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -29,12 +30,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Card
@@ -46,6 +48,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -65,10 +68,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -80,6 +83,8 @@ import com.litiangu.wuji.ui.designsystem.categoryDotColor
 import com.litiangu.wuji.ui.designsystem.fireHapticIfEnabled
 import com.litiangu.wuji.ui.home.PRIVACY_MASK
 import com.litiangu.wuji.ui.item.decodeImagePath
+import com.litiangu.wuji.ui.theme.BrandOrange
+import com.litiangu.wuji.ui.theme.BrandOrangeDark
 import com.litiangu.wuji.ui.theme.CategoryApplianceDark
 import com.litiangu.wuji.ui.theme.CategoryCustomDark
 import com.litiangu.wuji.ui.theme.CategoryDigitalDark
@@ -90,6 +95,8 @@ import com.litiangu.wuji.ui.theme.CategoryTrafficDark
 import com.litiangu.wuji.ui.theme.GradeExcellentLight
 import com.litiangu.wuji.ui.theme.GradeFairLight
 import com.litiangu.wuji.ui.theme.LocalWujiDarkTheme
+import com.litiangu.wuji.ui.theme.TintOrangeDark
+import com.litiangu.wuji.ui.theme.TintOrangeLight
 import com.litiangu.wuji.ui.theme.WujiRadius
 import java.util.Calendar
 import kotlin.math.roundToInt
@@ -126,6 +133,12 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
     // 滚动状态上提（Step 37）：超支警示条点击后滚动到底部预算卡
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
+
+    // 进入页面即强制重同步（Step 39 验收修复）：后台 Room 订阅之外的确定性兜底。
+    // 实测案例：徽章显示 5 件时 DB 已是 6 行（新增/恢复写入后订阅未驱动刷新），
+    // 重启预热才复原。每次进入页强制重读一次（本地计算 <5ms），彻底消除滞留，
+    // 对齐逻辑设计文档 §2.1「进入分析页（Tab 切换）→ 重新读取计算」的原始定义。
+    LaunchedEffect(Unit) { viewModel.refresh() }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -260,8 +273,8 @@ private fun AnalysisSectionLabel(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-// ===== 健康卡：圆环 + 分数 + 评语 + Items 徽章 + 数据基 + 最弱维度提示 =====
-// 纯结果卡（第二轮决策去 KPI 摘要），金额全部交给 AssetsCard。
+// ===== 健康卡 v2（Step 39 双磁贴重设计）：标题行(色点+评语+徽章) + 圆环 + 双维度磁贴 + 提示行 =====
+// 「数据基于所有物品流」行随重设计移除（信息由 AboutScreen 声明覆盖）；维度拆解条由双磁贴取代。
 @Composable
 private fun HealthCard(state: AnalysisUiState) {
     val gradeColor = parseHexColor(state.gradeColorHex)
@@ -269,10 +282,43 @@ private fun HealthCard(state: AnalysisUiState) {
 
     AnalysisCardBox {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            // 行 1：圆环 + 右侧文字
+            // 标题行：等级色点 + 评语（grade 四色）+ 件数徽章
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(96.dp)) {
-                    Canvas(modifier = Modifier.size(96.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(gradeColor)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    state.gradeComment.ifEmpty { "该唤醒了" },
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    color = gradeColor,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                )
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(WujiRadius.pill),
+                ) {
+                    Text(
+                        "${state.itemTotalCount} 件",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                        ),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                    )
+                }
+            }
+            // 圆环 + 双维度磁贴（Step 39 验收修订：圆环 96→116dp，修正左右 3:7 失衡）
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(116.dp)) {
+                    Canvas(modifier = Modifier.size(116.dp)) {
                         val stroke = 8.dp.toPx()
                         val inset = stroke / 2
                         val arcSize = Size(size.width - stroke, size.height - stroke)
@@ -319,57 +365,25 @@ private fun HealthCard(state: AnalysisUiState) {
                     }
                 }
                 Spacer(modifier = Modifier.width(20.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            state.gradeComment.ifEmpty { "断舍离时刻" },
-                            style = MaterialTheme.typography.headlineMedium.copy(
-                                fontSize = 28.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontStyle = FontStyle.Italic,
-                            ),
-                            color = gradeColor,
-                            maxLines = 1,
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        // Items 圆角徽章
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(WujiRadius.pill),
-                        ) {
-                            Text(
-                                "${state.itemTotalCount} items",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                ),
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
-                            )
-                        }
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 4.dp),
-                    ) {
-                        Icon(
-                            Icons.Filled.AutoAwesome,
-                            null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            "数据基于所有物品流",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    DimensionTile(
+                        label = "利用率",
+                        score = state.d1,
+                        contribution = (state.d1 * DIMENSION_WEIGHTS[0]).roundToInt(),
+                        icon = Icons.Filled.TouchApp,
+                    )
+                    DimensionTile(
+                        label = "价值健康",
+                        score = state.d2,
+                        contribution = (state.d2 * DIMENSION_WEIGHTS[1]).roundToInt(),
+                        icon = Icons.Filled.Savings,
+                    )
                 }
             }
-            // 行 1.5：四维拆解条（Step 36，默认展开；最弱维度高亮，回答「为什么是这个分」）
-            DimensionBars(state)
-            // 行 2：行动出口（最弱维度提示）
+            // 行动出口（最弱维度提示）
             if (state.weakestHint.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -390,77 +404,62 @@ private fun HealthCard(state: AnalysisUiState) {
     }
 }
 
-// 四维拆解条（Step 36；Step 37 审计修复改贡献度视角）：
-// 条长 = 子分比例（0~100），行尾数字 = 贡献分（子分 × 权重取整），直接回答「为什么是这个分」，
-// 消除「91 分但流转率 0」的认知矛盾。权重读 HealthScore.DIMENSION_WEIGHTS 单点真相，禁止硬编码。
-// 最弱维度实心 primary 高亮，其余 35% 透明。
+// 维度磁贴（Step 39；验收修订：白底+淡边框+软阴影，替代灰底「太脏」；内部改两行布局防窄磁贴截断）。
+// tint 圆深色感知（浅 TintOrangeLight+BrandOrange / 深 TintOrangeDark+BrandOrangeDark，对齐 §4 第 25 条）。
+// 贡献分权重读 DIMENSION_WEIGHTS 单点真相，禁止硬编码。
 @Composable
-private fun DimensionBars(state: AnalysisUiState) {
-    val dims = listOf(
-        "利用率" to state.d1,
-        "价值健康" to state.d2,
-        "流转率" to state.d3,
-        "变现回收" to state.d4,
-    )
-    val minScore = dims.minOf { it.second }
-    val trackColor = MaterialTheme.colorScheme.surfaceContainerLow
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                "维度拆解",
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                "贡献分 = 子分 × 权重",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        dims.forEachIndexed { index, (label, score) ->
-            val weakest = score <= minScore
-            val barColor = if (weakest) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+private fun DimensionTile(label: String, score: Double, contribution: Int, icon: ImageVector) {
+    val dark = LocalWujiDarkTheme.current
+    val circleBg = if (dark) TintOrangeDark else TintOrangeLight
+    val circleFg = if (dark) BrandOrangeDark else BrandOrange
+    val shape = RoundedCornerShape(12.dp)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(elevation = 1.dp, shape = shape),
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(circleBg),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    icon,
+                    null,
+                    tint = circleFg,
+                    modifier = Modifier.size(16.dp),
+                )
             }
-            val labelColor = if (weakest) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            }
-            val scoreColor = if (weakest) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Spacer(modifier = Modifier.width(10.dp))
+            Column {
                 Text(
                     label,
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = labelColor,
-                    modifier = Modifier.width(60.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(trackColor)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth((score / 100.0).toFloat().coerceIn(0f, 1f))
-                            .fillMaxHeight()
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(barColor)
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        "${score.roundToInt()}",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        "+$contribution",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 2.dp),
                     )
                 }
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    "+${(score * DIMENSION_WEIGHTS[index]).roundToInt()}",
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                    color = scoreColor,
-                    textAlign = TextAlign.End,
-                    modifier = Modifier.width(32.dp),
-                )
             }
         }
     }
