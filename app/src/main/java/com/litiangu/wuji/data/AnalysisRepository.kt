@@ -1,6 +1,9 @@
 package com.litiangu.wuji.data
 
 import android.content.Context
+import com.litiangu.wuji.data.db.CategoryBudgetDao
+import com.litiangu.wuji.data.db.CategoryDao
+import com.litiangu.wuji.data.db.ItemDao
 import com.litiangu.wuji.data.db.WujiDatabase
 import com.litiangu.wuji.data.db.WujiDatabaseProvider
 import com.litiangu.wuji.data.settings.SettingsDataStore
@@ -36,6 +39,12 @@ object AnalysisRepository {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile private var started = false
 
+    // 数据源引用：init 时缓存，供 refresh() 强制重读（Step 35）
+    @Volatile private var itemDao: ItemDao? = null
+    @Volatile private var categoryDao: CategoryDao? = null
+    @Volatile private var categoryBudgetDao: CategoryBudgetDao? = null
+    @Volatile private var settings: SettingsDataStore? = null
+
     /**
      * 同步预热 + 后台订阅。WujiApplication 在 _isReady=true 之前调用一次。
      * 幂等：重复调用不会重启订阅。
@@ -43,32 +52,37 @@ object AnalysisRepository {
     suspend fun init(context: Context) {
         if (started) return
         val database: WujiDatabase = WujiDatabaseProvider.get(context)
-        val settings = SettingsDataStore(context)
-        val itemDao = database.itemDao()
-        val categoryDao = database.categoryDao()
-        val categoryBudgetDao = database.categoryBudgetDao()
+        val appSettings = SettingsDataStore(context)
+        val appItemDao = database.itemDao()
+        val appCategoryDao = database.categoryDao()
+        val appCategoryBudgetDao = database.categoryBudgetDao()
+
+        itemDao = appItemDao
+        categoryDao = appCategoryDao
+        categoryBudgetDao = appCategoryBudgetDao
+        settings = appSettings
 
         // 1) 同步取首帧，立刻算出真实 StateFlow
-        val items = itemDao.observeAll().first()
-        val categories = categoryDao.observeAll().first()
-        val anchor = settings.budgetAnchorFlow.first()
-        val monthlyBudget = settings.monthlyBudgetAnchorFlow.first()
-        val budgets = categoryBudgetDao.observeAll().first()
-        _privacyMode.value = settings.privacyModeFlow.first()
+        val items = appItemDao.observeAll().first()
+        val categories = appCategoryDao.observeAll().first()
+        val anchor = appSettings.budgetAnchorFlow.first()
+        val monthlyBudget = appSettings.monthlyBudgetAnchorFlow.first()
+        val budgets = appCategoryBudgetDao.observeAll().first()
+        _privacyMode.value = appSettings.privacyModeFlow.first()
         _uiState.value = buildAnalysisUiState(items, categories, anchor, monthlyBudget, budgets)
 
         // 2) 后台持续订阅
         // 预算配置合成（保持 4 combine 兼容：item/category/anchor/预算对）
         val budgetConfig = combine(
-            settings.monthlyBudgetAnchorFlow,
-            categoryBudgetDao.observeAll()
+            appSettings.monthlyBudgetAnchorFlow,
+            appCategoryBudgetDao.observeAll()
         ) { m, b -> m to b }
 
         scope.launch {
             combine(
-                itemDao.observeAll(),
-                categoryDao.observeAll(),
-                settings.budgetAnchorFlow,
+                appItemDao.observeAll(),
+                appCategoryDao.observeAll(),
+                appSettings.budgetAnchorFlow,
                 budgetConfig
             ) { items, categories, anchor, cfg ->
                 val (monthly, budgets) = cfg
@@ -76,9 +90,28 @@ object AnalysisRepository {
             }.collect { _uiState.value = it }
         }
         scope.launch {
-            settings.privacyModeFlow.collect { _privacyMode.value = it }
+            appSettings.privacyModeFlow.collect { _privacyMode.value = it }
         }
 
         started = true
+    }
+
+    /**
+     * 刷新（Step 35）：强制重读五源（物品/分类/分类预算/每日锚点/月度预算）并重建 UiState。
+     * 供分析页顶栏刷新按钮调用；Room Flow 后台订阅之外的确定性同步
+     * （典型场景：备份还原后立即反映还原后数据）。
+     * 未 init（字段为 null）时静默跳过。
+     */
+    suspend fun refresh() {
+        val dao = itemDao ?: return
+        val catDao = categoryDao ?: return
+        val budgetDao = categoryBudgetDao ?: return
+        val st = settings ?: return
+        val items = dao.observeAll().first()
+        val categories = catDao.observeAll().first()
+        val anchor = st.budgetAnchorFlow.first()
+        val monthlyBudget = st.monthlyBudgetAnchorFlow.first()
+        val budgets = budgetDao.observeAll().first()
+        _uiState.value = buildAnalysisUiState(items, categories, anchor, monthlyBudget, budgets)
     }
 }

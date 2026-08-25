@@ -1,6 +1,7 @@
 package com.litiangu.wuji.ui.analysis
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.litiangu.wuji.data.AnalysisRepository
 import com.litiangu.wuji.data.db.ItemEntity
 import com.litiangu.wuji.data.db.ItemStatus
@@ -9,6 +10,7 @@ import com.litiangu.wuji.data.db.CategoryBudgetEntity
 import com.litiangu.wuji.data.db.toItemInput
 import com.litiangu.wuji.domain.computeHealthScore
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import java.util.Calendar
 
 // 分类分布的一个柱：分类名 + 价值合计 + 数量 + 分类 key（驱动分类色）
@@ -252,4 +254,12 @@ class AnalysisViewModel() : ViewModel() {
     // VM 仅做透传：避免重复 stateIn 造成的订阅重启与首帧延迟
     val uiState: StateFlow<AnalysisUiState> = AnalysisRepository.uiState
     val privacyMode: StateFlow<Boolean> = AnalysisRepository.privacyMode
+
+    /**
+     * 刷新（Step 35）：顶栏刷新按钮入口，强制重读五源重建 UiState。
+     * Room/DataStore 挂起调用均 main-safe，viewModelScope(Main) 直接launch即可。
+     */
+    fun refresh() {
+        viewModelScope.launch { AnalysisRepository.refresh() }
+    }
 }

@@ -1,11 +1,15 @@
 package com.litiangu.wuji.ui.analysis
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -14,8 +18,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +27,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Circle
@@ -34,11 +40,15 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,7 +61,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -60,10 +73,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.ui.designsystem.categoryDotColor
+import com.litiangu.wuji.ui.designsystem.fireHapticIfEnabled
 import com.litiangu.wuji.ui.home.PRIVACY_MASK
 import com.litiangu.wuji.ui.item.decodeImagePath
+import com.litiangu.wuji.ui.theme.CategoryApplianceDark
+import com.litiangu.wuji.ui.theme.CategoryCustomDark
+import com.litiangu.wuji.ui.theme.CategoryDigitalDark
+import com.litiangu.wuji.ui.theme.CategoryFurnitureDark
+import com.litiangu.wuji.ui.theme.CategorySportDark
+import com.litiangu.wuji.ui.theme.CategoryToolDark
+import com.litiangu.wuji.ui.theme.CategoryTrafficDark
 import com.litiangu.wuji.ui.theme.GradeExcellentLight
+import com.litiangu.wuji.ui.theme.GradeFairLight
+import com.litiangu.wuji.ui.theme.LocalWujiDarkTheme
 import com.litiangu.wuji.ui.theme.WujiRadius
+import java.util.Calendar
+import kotlin.math.roundToInt
 
 /**
  * 分析页（Step 32 重设计，对齐 4.0 设计稿；Step 33 底部避让 + 排行榜领奖台）：
@@ -84,6 +109,15 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
 
     // 顶栏无返回箭头（4.0 设计稿形态），返回路径 = 系统返回键（Step 32 决策 A）
     BackHandler(onBack = onClose)
+
+    // 刷新按钮（Step 35 功能化）：每次点击图标转一整圈（600ms），并行触发强制重读
+    val context = LocalContext.current
+    var spinTarget by remember { mutableIntStateOf(0) }
+    val refreshRotation by animateFloatAsState(
+        targetValue = spinTarget * 360f,
+        animationSpec = tween(durationMillis = 600),
+        label = "refreshSpin",
+    )
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -108,12 +142,18 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
                 )
-                // 刷新按钮：数据由 Room Flow 自动驱动，点击无实际副作用；保留为视觉参照
-                IconButton(onClick = { }) {
+                // 刷新按钮（Step 35 功能化）：轻震 + 转一圈 + 强制重读五源重建 UiState
+                // （备份还原等场景后保证立即反映最新数据；Room Flow 后台订阅不受影响）
+                IconButton(onClick = {
+                    context.fireHapticIfEnabled()
+                    spinTarget++
+                    viewModel.refresh()
+                }) {
                     Icon(
                         Icons.Filled.Refresh,
                         "刷新",
                         tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.graphicsLayer { rotationZ = refreshRotation },
                     )
                 }
             }
@@ -140,7 +180,7 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
                     HonorCard(state.honors, privacyMasked)
                     AssetsCard(state, privacyMasked)
                     CategoryDistributionCard(state, privacyMasked)
-                    TrendCard(state)
+                    TrendCard(state, privacyMasked)
                     BudgetCard(state, privacyMasked)
                 }
             }
@@ -528,7 +568,9 @@ private fun AssetRow(label: String, value: String, emphasized: Boolean) {
     }
 }
 
-// ===== 分类资产分布：横向进度条 + 分类色 + 金额 =====
+// ===== 分类资产分布：环形图 + 图例（Step 35，替代横向进度条）=====
+// 环形：Canvas drawArc stroke 式，扇区 = 分类值/合计×360，起 -90°；环心放合计金额+总件数。
+// 图例：色点 + 名称 + 件数 + 金额 + 占比%。金额脱敏、比例按真实值（Step 28 原则）。
 @Composable
 private fun CategoryDistributionCard(state: AnalysisUiState, privacyMasked: Boolean) {
     AnalysisCardBox {
@@ -548,49 +590,106 @@ private fun CategoryDistributionCard(state: AnalysisUiState, privacyMasked: Bool
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                val maxValue = state.categoryBars.maxOfOrNull { it.value } ?: 0.0
-                state.categoryBars.forEach { bar ->
-                    val color = categoryDotColor(bar.categoryKey)
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(color)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
+                // 分类色须在 Composable 作用域解析（DrawScope 内不能读 Composable/主题）
+                val segColors = state.categoryBars.map { categoryDotColorAware(it.categoryKey) }
+                val totalValue = state.categoryBars.sumOf { it.value }
+                val totalCount = state.categoryBars.sumOf { it.count }
+                val ringBgColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                val centerAmount = if (privacyMasked) PRIVACY_MASK else formatYuan(totalValue)
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    // 环形图 + 环心合计
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(116.dp)) {
+                        Canvas(modifier = Modifier.size(116.dp)) {
+                            val stroke = 20.dp.toPx()
+                            val inset = stroke / 2
+                            val arcSize = Size(size.width - stroke, size.height - stroke)
+                            val arcTopLeft = Offset(inset, inset)
+                            if (totalValue <= 0.0) {
+                                // 合计为 0：只画满圈底环
+                                drawArc(
+                                    color = ringBgColor,
+                                    startAngle = -90f,
+                                    sweepAngle = 360f,
+                                    useCenter = false,
+                                    topLeft = arcTopLeft,
+                                    size = arcSize,
+                                    style = Stroke(width = stroke),
+                                )
+                            } else {
+                                var start = -90f
+                                state.categoryBars.forEachIndexed { i, bar ->
+                                    val sweep = (bar.value / totalValue * 360.0).toFloat()
+                                    drawArc(
+                                        color = segColors[i],
+                                        startAngle = start,
+                                        sweepAngle = sweep,
+                                        useCenter = false,
+                                        topLeft = arcTopLeft,
+                                        size = arcSize,
+                                        style = Stroke(width = stroke),
+                                    )
+                                    start += sweep
+                                }
+                            }
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                bar.label,
-                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                                centerAmount,
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
                             )
                             Text(
-                                if (privacyMasked) PRIVACY_MASK else formatYuan(bar.value),
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSurface,
+                                "共${totalCount}件",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        // 横向进度条：填充比例 = 分类值 / maxValue
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                        ) {
-                            val frac = (if (maxValue > 0) bar.value / maxValue else 0.0)
-                                .toFloat()
-                                .coerceIn(0f, 1f)
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(frac)
-                                    .fillMaxHeight()
-                                    .clip(RoundedCornerShape(3.dp))
-                                    .background(color)
-                            )
+                    }
+                    // 图例
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        state.categoryBars.forEachIndexed { i, bar ->
+                            val pct = if (totalValue > 0) bar.value / totalValue * 100.0 else 0.0
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(segColors[i])
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        bar.label,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                    )
+                                    Text(
+                                        "${bar.count}件",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        if (privacyMasked) PRIVACY_MASK else formatYuan(bar.value),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        "%.0f%%".format(pct),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -599,20 +698,48 @@ private fun CategoryDistributionCard(state: AnalysisUiState, privacyMasked: Bool
     }
 }
 
-// ===== 近半年支出趋势：6 月折线 + 面积渐变 + 总物品数量副柱 + 数据点 =====
-// 趋势图无 Y 轴金额刻度（设计稿亦无），副柱是物品数量非金额，故不接 privacyMasked。
+// 分类点色（深色感知，Step 35）：浅色复用 categoryDotColor，深色用 CategoryXxxDark 令牌
+// （对齐 Step 18 深色可读性方案；不改动已定型的 categoryDotColor，避免波及首页）
 @Composable
-private fun TrendCard(state: AnalysisUiState) {
+private fun categoryDotColorAware(colorKey: String?): Color {
+    return if (LocalWujiDarkTheme.current) {
+        when (colorKey) {
+            "digital" -> CategoryDigitalDark
+            "appliance" -> CategoryApplianceDark
+            "furniture" -> CategoryFurnitureDark
+            "tool" -> CategoryToolDark
+            "traffic" -> CategoryTrafficDark
+            "sport" -> CategorySportDark
+            else -> CategoryCustomDark
+        }
+    } else {
+        categoryDotColor(colorKey)
+    }
+}
+
+// ===== 近半年支出趋势：6 月折线 + 面积渐变 + 总物品数量副柱 + 数据点（Step 35 增强）=====
+// 新增：点击数据点 tooltip（Box overlay + selectedIdx，金额脱敏）+ 底部环比摘要行；
+// 副柱 4dp→10dp、alpha 0.2→0.25 提高可读性。
+@Composable
+private fun TrendCard(state: AnalysisUiState, privacyMasked: Boolean) {
     AnalysisCardBox {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(
-                "近半年支出趋势",
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                ),
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            // 标题 + 环比徽章（Step 35 修订：环比从底部移到右上角，更易注意到变化）
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "近半年支出趋势",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                MomBadge(state.monthlyTrend)
+            }
             if (state.monthlyTrend.all { it.amount <= 0.0 }) {
                 Text(
                     "近半年暂无支出数据",
@@ -637,28 +764,41 @@ private fun TrendCard(state: AnalysisUiState) {
                 val chartPrimary = MaterialTheme.colorScheme.primary
                 val chartSecondary = MaterialTheme.colorScheme.secondary
                 val pointInner = MaterialTheme.colorScheme.surfaceContainerLowest
+                val maxAmount = state.monthlyTrend.maxOf { it.amount }.coerceAtLeast(1.0)
+                var selectedIdx by remember { mutableStateOf<Int?>(null) }
+
+                BoxWithConstraints {
                 Canvas(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(180.dp),
+                        .height(180.dp)
+                        .pointerInput(state.monthlyTrend) {
+                            detectTapGestures { pos ->
+                                val n = state.monthlyTrend.size
+                                if (n < 2) return@detectTapGestures
+                                val padPx = 16.dp.toPx()
+                                val stepPx = ((size.width - padPx * 2) / (n - 1)).coerceAtLeast(1f)
+                                val idx = ((pos.x - padPx) / stepPx).roundToInt().coerceIn(0, n - 1)
+                                selectedIdx = if (selectedIdx == idx) null else idx
+                            }
+                        },
                 ) {
                     val w = size.width
                     val h = size.height
                     val pad = 16.dp.toPx()
-                    val maxAmount = state.monthlyTrend.maxOf { it.amount }.coerceAtLeast(1.0)
                     val maxDelta = maxOf(state.monthlyTrend.maxOf { it.itemDelta }, 1)
                     val stepX = (w - pad * 2) / (state.monthlyTrend.size - 1).coerceAtLeast(1)
                     val chartH = h - pad * 2
 
-                    // 1. 副柱（总物品数量，半透明；净变动为负时不画）
+                    // 1. 副柱（总物品数量，半透明；净变动为负时不画）— Step 35 加宽提亮
                     state.monthlyTrend.forEachIndexed { i, p ->
                         if (p.itemDelta <= 0) return@forEachIndexed
                         val barH = chartH * (p.itemDelta.toFloat() / maxDelta)
-                        val x = pad + stepX * i - 2.dp.toPx()
+                        val x = pad + stepX * i - 5.dp.toPx()
                         drawRect(
-                            color = chartSecondary.copy(alpha = 0.2f),
+                            color = chartSecondary.copy(alpha = 0.25f),
                             topLeft = Offset(x, h - pad - barH),
-                            size = Size(4.dp.toPx(), barH),
+                            size = Size(10.dp.toPx(), barH),
                         )
                     }
                     // 2. 折线路径 + 面积路径
@@ -704,6 +844,33 @@ private fun TrendCard(state: AnalysisUiState) {
                         val y = pad + chartH * (1f - (p.amount / maxAmount).toFloat())
                         drawCircle(chartPrimary, radius = 4.dp.toPx(), center = Offset(x, y))
                         drawCircle(pointInner, radius = 1.5.dp.toPx(), center = Offset(x, y))
+                    }
+                }
+                    // tooltip 气泡（Step 35）：dp 坐标与 Canvas 绘制公式同源；96dp 定宽防文本抖动
+                    selectedIdx?.let { idx ->
+                        if (idx in state.monthlyTrend.indices) {
+                            val p = state.monthlyTrend[idx]
+                            val padD = 16.dp
+                            val n = state.monthlyTrend.size
+                            val stepXD = (maxWidth - padD * 2) / (n - 1).coerceAtLeast(1)
+                            val chartHD = 180.dp - padD * 2
+                            val xD = padD + stepXD * idx
+                            val yD = padD + chartHD * (1f - (p.amount / maxAmount).toFloat())
+                            val bx = (xD - 48.dp).coerceIn(0.dp, (maxWidth - 96.dp).coerceAtLeast(0.dp))
+                            val by = (yD - 46.dp).coerceAtLeast(0.dp)
+                            Surface(
+                                modifier = Modifier.offset(x = bx, y = by),
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.onSurface,
+                            ) {
+                                Text(
+                                    "${p.label} " + if (privacyMasked) PRIVACY_MASK else formatYuan(p.amount),
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                )
+                            }
+                        }
                     }
                 }
                 // X 月份标签
@@ -756,6 +923,47 @@ private fun LegendDot(color: Color, label: String, line: Boolean) {
     }
 }
 
+// 环比徽章（Step 35 修订）：置于趋势卡标题右上角。
+// 涨=红（支出上升是坏信号）/ 降=绿 / ±0.5% 内持平灰；同色 10% 底 pill + 箭头（形状编码）+ ±%（文字编码），
+// 不单靠颜色区分（无障碍要求，对齐逻辑设计文档 §5）。
+@Composable
+private fun MomBadge(trend: List<TrendPoint>) {
+    val prevAmount = trend.dropLast(1).lastOrNull()?.amount ?: 0.0
+    val lastAmount = trend.lastOrNull()?.amount ?: 0.0
+    if (prevAmount <= 0.0) return
+    val momPct = (lastAmount - prevAmount) / prevAmount * 100.0
+    val flat = momPct >= -0.5 && momPct <= 0.5
+    val momColor = when {
+        flat -> MaterialTheme.colorScheme.onSurfaceVariant
+        momPct > 0 -> MaterialTheme.colorScheme.error
+        else -> GradeExcellentLight
+    }
+    Surface(
+        color = momColor.copy(alpha = 0.1f),
+        shape = RoundedCornerShape(WujiRadius.pill),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+        ) {
+            if (!flat) {
+                Icon(
+                    if (momPct > 0) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
+                    null,
+                    tint = momColor,
+                    modifier = Modifier.size(12.dp),
+                )
+                Spacer(modifier = Modifier.width(3.dp))
+            }
+            Text(
+                if (flat) "较上月持平" else "较上月 %+.0f%%".format(momPct),
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = momColor,
+            )
+        }
+    }
+}
+
 // ===== 预算遵从卡（Step 21 原样保留，仅位置挪到底部最后一张）=====
 @Composable
 private fun BudgetCard(state: AnalysisUiState, privacyMasked: Boolean = false) {
@@ -794,6 +1002,43 @@ private fun BudgetCard(state: AnalysisUiState, privacyMasked: Boolean = false) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                // 三态进度条（Step 35 修订）：绿（<80% 健康）→ 黄（80~100% 提醒）→ 红（>100% 超支）。
+                // 固定语义色明暗通用；正常态弃用 primary 橙（与品牌色混同难辨三态）。
+                // 80% 位置画警戒刻度线，用量离警戒线的距离一眼可辨。
+                val spendFrac = if (state.monthlyBudget > 0) (state.recentSpend30 / state.monthlyBudget).toFloat() else 0f
+                val spendBarColor = when {
+                    spendFrac > 1f -> MaterialTheme.colorScheme.error
+                    spendFrac >= 0.8f -> GradeFairLight
+                    else -> GradeExcellentLight
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(spendFrac.coerceIn(0f, 1f))
+                            .fillMaxHeight()
+                            .background(spendBarColor)
+                    )
+                    // 80% 警戒刻度线
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.8f)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.CenterEnd,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(2.dp)
+                                .fillMaxHeight()
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
+                        )
+                    }
+                }
                 // 超支徽标：红=已超支，灰=未超支（主题安全，不依赖固定色）
                 val badgeText = if (overGlobal) "已超支" else "未超支"
                 val badgeColor = if (overGlobal) {
@@ -801,12 +1046,36 @@ private fun BudgetCard(state: AnalysisUiState, privacyMasked: Boolean = false) {
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 }
-                Text(
-                    badgeText,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = badgeColor,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                // 徽标 + 日均可花（Step 35）=（月预算 − 近30天支出）/ 当月剩余天数；超支改显「超出 ¥x」
+                val cal = Calendar.getInstance()
+                val daysLeft = (cal.getActualMaximum(Calendar.DAY_OF_MONTH) - cal.get(Calendar.DAY_OF_MONTH)).coerceAtLeast(1)
+                val remaining = state.monthlyBudget - state.recentSpend30
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        badgeText,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = badgeColor,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (remaining > 0) {
+                        Text(
+                            "日均可花 ${if (privacyMasked) PRIVACY_MASK else formatYuan(remaining / daysLeft)}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    } else {
+                        Text(
+                            "超出 ${if (privacyMasked) PRIVACY_MASK else formatYuan(-remaining)}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
             }
 
             // 分类限额高亮（仅含「已设限额」的分类）
@@ -825,22 +1094,44 @@ private fun BudgetCard(state: AnalysisUiState, privacyMasked: Boolean = false) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 state.categoryBudgetRows.forEach { row ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            row.label,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (row.over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            "${if (privacyMasked) PRIVACY_MASK else formatYuan(row.spend)} / ${if (privacyMasked) PRIVACY_MASK else formatYuan(row.limit)}",
-                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
-                            fontWeight = FontWeight.Bold,
-                            color = if (row.over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                row.label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (row.over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                "${if (privacyMasked) PRIVACY_MASK else formatYuan(row.spend)} / ${if (privacyMasked) PRIVACY_MASK else formatYuan(row.limit)}",
+                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
+                                fontWeight = FontWeight.Bold,
+                                color = if (row.over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        // mini 进度条（Step 35 修订）：spend/limit，超支红 / 正常绿（与全局条三态语义一致）
+                        val rowFrac = if (row.limit > 0) (row.spend / row.limit).toFloat().coerceIn(0f, 1f) else 0f
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(rowFrac)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(
+                                        if (row.over) MaterialTheme.colorScheme.error
+                                        else GradeExcellentLight
+                                    )
+                            )
+                        }
                     }
                 }
             }
