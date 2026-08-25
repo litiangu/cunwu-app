@@ -161,7 +161,7 @@ fun AboutScreen(
                     AboutStatement(
                         icon = Icons.Filled.Inventory2,
                         title = "关于存物",
-                        body = "本地物品管理，辅助断舍离决策。",
+                        body = "本地物品管理，以健康分呈现物品的使用与性价比。",
                     )
                 }
 
@@ -282,11 +282,11 @@ private fun UserAgreementContent() {
 
     Text("欢迎使用存物", style = headingStyle, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
     Spacer(Modifier.height(WujiSpace.md))
-    LegalParagraph("存物是一款完全在您本机运行的本地物品管理工具，用于记录家中物品、以健康分辅助断舍离决策。")
+    LegalParagraph("存物是一款完全在您本机运行的本地物品管理工具，用于记录家中物品、以健康分呈现物品的使用与性价比。")
     LegalParagraph("一、数据本地化。您录入的所有物品信息、图片、预算与偏好均仅存储于本机数据库与 DataStore，不会上传任何服务器，我们也无法访问。")
     LegalParagraph("二、备份与导出。数据备份与导出文件由您自行管理，请妥善保管，避免设备丢失或文件泄露导致的信息外泄。")
     LegalParagraph("三、无第三方账号。本应用不要求注册账号，不与任何第三方共享您的数据。")
-    LegalParagraph("四、责任限制。本应用按「原样」提供，用于辅助断舍离决策，不构成任何专业财务或法律建议。因使用本应用产生的任何损失，我们不承担责任。")
+    LegalParagraph("四、责任限制。本应用按「原样」提供，用于物品记录与健康分参考，不构成任何专业财务或法律建议。因使用本应用产生的任何损失，我们不承担责任。")
     LegalParagraph("五、协议变更。本协议可能随版本更新而调整，请以应用内最新版本为准。继续使用即表示您同意最新条款。")
     Spacer(Modifier.height(WujiSpace.lg))
 }

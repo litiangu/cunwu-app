@@ -3,15 +3,19 @@ package com.litiangu.wuji.domain
 import kotlin.math.roundToInt
 
 /**
- * 健康分计算引擎（H2 模型）。
+ * 健康分计算引擎（v5 模型，「记录哲学」二维重设计，Step 38）。
  *
- * 设计要点（来自《健康分加权模型设计草案》v0.3 定稿）：
- * - 健康分是「全库健康度」，四个维度全部是集合级聚合，不是单物品分。
- *   （03 计划文档写的 computeScore(item) 是简化，实际按草案的集合聚合实现。）
- * - 公式：score = 0.50·D1 + 0.40·D2 + 0.05·D3 + 0.05·D4（v0.4 起调）
- *   D1 利用率 / D2 价值健康度主导（合计 0.90），D3 流转率 / D4 变现回收降为微调项（合计 0.10），
- *   使优(≥85)可由「高利用率 + 高价值健康」直接达到，不再被售出/变现隐性卡门槛。
- *   D3 流转率封顶 50%，D4 变现回收封顶 60%。
+ * 产品哲学：slogan「存下此刻，物有所值」——注重对物品的记录与陪伴。
+ * 物品使用越久、日均持有成本越低、性价比越高；流转/售出只是需求变化、报废、损坏后的
+ * 自然生命周期事件，不是健康行为，不参与评分（生命周期事实由分析页资产卡回收率、
+ * 最近变动流水作信息展示）。
+ *
+ * - 公式：score = 0.55·D1 + 0.45·D2
+ *   D1 利用率 = 使用中 / (使用中 + 闲置) × 100，已售出物品移出统计池（售出 = 自然离场，
+ *   不再拖累在用率）；持有 0 件（全部离场）→ D1 = 100（无闲置即满分）。
+ *   D2 价值健康度 = 100 × min(1, 每日预算锚点 / 聚合日均持有成本)，全生命周期口径
+ *   （含已售出：长陪伴摊薄日均、正向贡献，正是「用得久 = 有性价比」的表达）。
+ * - 历史：v0.3 四维 → v0.4 调权（0.50/0.40/0.05/0.05）→ v5 二维（本版，移除流转率/变现回收）。
  * - 本文件保持纯 Kotlin（不依赖 Android / Room），便于 JVM 单测。
  */
 
@@ -26,12 +30,10 @@ data class ItemInput(
     val companionshipDays: Int   // 陪伴天数 = 今天 - 购买日期（映射器算好传入）
 )
 
-// 四个维度子分（均为 0~100）
+// 两个维度子分（均为 0~100）
 data class DimensionScores(
     val d1Usage: Double,       // 利用率
-    val d2ValueHealth: Double, // 价值健康度
-    val d3Turnover: Double,    // 流转率
-    val d4Recovery: Double     // 变现回收
+    val d2ValueHealth: Double  // 价值健康度
 )
 
 // 等级 + 同源派生的评语与色值。
@@ -42,10 +44,10 @@ enum class HealthGrade(
     val comment: String,     // 分析评语
     val colorHex: String
 ) {
-    EXCELLENT("优", "少即是多", "#34C759"),
+    EXCELLENT("优", "物尽其用", "#34C759"),
     GOOD("良", "张弛有度", "#0095FF"),
-    MEDIUM("中", "略有冗余", "#FFCC00"),
-    POOR("差", "断舍离时刻", "#FF4438")
+    MEDIUM("中", "略有闲置", "#FFCC00"),
+    POOR("差", "该唤醒了", "#FF4438")
 }
 
 // 健康分计算结果
@@ -58,25 +60,18 @@ data class HealthScoreResult(
     val colorHex: String
 )
 
-// 权重（合计 1.0）。v0.4 起调：D1 利用率 / D2 价值健康度主导（合计 0.90），
-// D3 流转率 / D4 变现回收降为微调项（合计 0.10），使优(≥85)可由「高利用率 + 高价值健康」直接达到，
-// 不再被售出 / 变现隐性卡门槛。详见《健康分加权模型设计草案》权重调整记录。
-private const val W_D1 = 0.50   // 利用率（主导）
-private const val W_D2 = 0.40   // 价值健康度（主导）
-private const val W_D3 = 0.05   // 流转率（微调）
-private const val W_D4 = 0.05   // 变现回收（微调）
+// 权重（合计 1.0）。v5 二维：利用率 55% / 价值健康度 45%，
+// 保持「使用略重于成本」的倾向（v0.4 为 0.50/0.40 的归一化近似）。
+private const val W_D1 = 0.55   // 利用率
+private const val W_D2 = 0.45   // 价值健康度
 
 /**
- * 维度权重公开常量（Step 37）：供分析页拆解条「贡献分 = 子分 × 权重」展示用。
+ * 维度权重公开常量（Step 37 引入）：供分析页拆解条「贡献分 = 子分 × 权重」展示用。
  * 单点真相：UI 从这里读权重，算法调权时 UI 自动跟随（Step 36 曾因 UI 侧硬编码
- * 过期文档权重 40/30/15/15 导致标注错误，教训见 37_分析页审计修复.md §1）。
- * 顺序：利用率 / 价值健康度 / 流转率 / 变现回收，与 DimensionScores 字段一一对应。
+ * 过期文档权重导致标注错误，教训见 37_分析页审计修复.md §1）。
+ * 顺序：利用率 / 价值健康度，与 DimensionScores 字段一一对应。
  */
-val DIMENSION_WEIGHTS = listOf(W_D1, W_D2, W_D3, W_D4)
-
-// 封顶
-private const val D3_CAP = 0.50 // 流转率封顶 50%
-private const val D4_CAP = 0.60 // 变现回收封顶 60%
+val DIMENSION_WEIGHTS = listOf(W_D1, W_D2)
 
 // 预算锚点：默认 ¥3000/月 → 每日 ≈ ¥100（D2 比对用）
 const val DEFAULT_DAILY_BUDGET_ANCHOR = 100.0
@@ -101,7 +96,7 @@ fun gradeFromScore(score: Double): HealthGrade = when {
  * 计算全库健康分。
  * @param items 物品集合（映射后的输入）
  * @param dailyBudgetAnchor 每日预算锚点（元），默认 ¥100
- * @return 健康分结果（总分、四维子分、等级、评语、色值）
+ * @return 健康分结果（总分、二维子分、等级、评语、色值）
  */
 fun computeHealthScore(
     items: List<ItemInput>,
@@ -113,7 +108,7 @@ fun computeHealthScore(
         return HealthScoreResult(
             total = 0.0,
             totalRounded = 0,
-            dimensions = DimensionScores(0.0, 0.0, 0.0, 0.0),
+            dimensions = DimensionScores(0.0, 0.0),
             grade = HealthGrade.POOR,
             comment = HealthGrade.POOR.comment,
             colorHex = HealthGrade.POOR.colorHex
@@ -121,13 +116,14 @@ fun computeHealthScore(
     }
 
     val inUse = items.count { it.isInUse }
-    val sold = items.count { it.isSold }
 
-    // D1 利用率 = 使用中 / 总物品数 × 100（分母含已售出）
-    val d1 = inUse.toDouble() / total * 100.0
+    // D1 利用率（v5 口径修正）= 使用中 / (使用中 + 闲置) × 100，已售出移出统计池
+    // （售出 = 自然离场，不再永久拖累在用率）；持有 0 件（全部离场）→ 无闲置即满分。
+    val owned = items.count { !it.isSold }
+    val d1 = if (owned <= 0) 100.0 else inUse.toDouble() / owned * 100.0
 
     // D2 价值健康度 = 100 × min(1, 每日预算锚点 / 聚合日均持有成本)
-    // 聚合日均持有成本 = Σ(购入+附加−收益) / Σ(陪伴天数)
+    // 聚合日均持有成本 = Σ(购入+附加−收益) / Σ(陪伴天数)，全生命周期口径（含已售出）
     val netSum = items.sumOf { it.purchasePrice + it.extraCost - it.resaleValue }
     val daySum = items.sumOf { it.companionshipDays.toDouble() }
     val d2 = if (daySum <= 0.0 || netSum <= 0.0) {
@@ -138,26 +134,12 @@ fun computeHealthScore(
         100.0 * minOf(1.0, dailyBudgetAnchor / aggDaily)
     }
 
-    // D3 流转率 = 100 × min(sold/total, 50%)
-    val d3 = 100.0 * minOf(sold.toDouble() / total, D3_CAP)
-
-    // D4 变现回收 = 100 × min(max(0, Σ收益) / Σ购入, 60%)
-    val purchaseSum = items.sumOf { it.purchasePrice }
-    val resaleSum = items.sumOf { it.resaleValue }
-    val d4 = if (purchaseSum <= 0.0) {
-        // 无购入成本则无可回收基数 → 0（不构成「回收优异」）
-        0.0
-    } else {
-        val recovery = maxOf(0.0, resaleSum) / purchaseSum
-        100.0 * minOf(recovery, D4_CAP)
-    }
-
-    val score = W_D1 * d1 + W_D2 * d2 + W_D3 * d3 + W_D4 * d4
+    val score = W_D1 * d1 + W_D2 * d2
     val grade = gradeFromScore(score)
     return HealthScoreResult(
         total = score,
         totalRounded = score.roundToInt(),
-        dimensions = DimensionScores(d1, d2, d3, d4),
+        dimensions = DimensionScores(d1, d2),
         grade = grade,
         comment = grade.comment,
         colorHex = grade.colorHex

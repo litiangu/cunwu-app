@@ -60,12 +60,10 @@ data class AnalysisUiState(
     val hasItems: Boolean = false,
     val score: Int = 0,                    // 健康分四舍五入整数
     val gradeLabel: String = "",            // 优/良/中/差（首页同源粒度）
-    val gradeComment: String = "",          // 少即是多/张弛有度/略有冗余/断舍离时刻（本页评语大字）
+    val gradeComment: String = "",          // 物尽其用/张弛有度/略有闲置/该唤醒了（本页评语大字）
     val gradeColorHex: String = "#34C759",  // 圆环/评语文本色（与 HealthGrade.colorHex 同源）
     val d1: Double = 0.0,                   // 利用率
     val d2: Double = 0.0,                   // 价值健康度
-    val d3: Double = 0.0,                   // 流转率
-    val d4: Double = 0.0,                   // 变现回收
     val totalInput: Double = 0.0,           // 净持有口径：未售出 购入+附加
     val totalRecovery: Double = 0.0,        // 已变现：全部 二手收益
     val netHolding: Double = 0.0,           // 净持有 = 未售出投入 − 全部变现
@@ -136,8 +134,6 @@ internal fun buildAnalysisUiState(
         gradeColorHex = result.colorHex,
         d1 = result.dimensions.d1Usage,
         d2 = result.dimensions.d2ValueHealth,
-        d3 = result.dimensions.d3Turnover,
-        d4 = result.dimensions.d4Recovery,
         totalInput = totalInput,
         totalRecovery = totalRecovery,
         netHolding = totalInput - totalRecovery,
@@ -151,9 +147,7 @@ internal fun buildAnalysisUiState(
         recentChanges = buildRecentChanges(items, nameById),
         weakestHint = weakestHint(
             result.dimensions.d1Usage,
-            result.dimensions.d2ValueHealth,
-            result.dimensions.d3Turnover,
-            result.dimensions.d4Recovery
+            result.dimensions.d2ValueHealth
         ),
     )
 }
@@ -296,15 +290,14 @@ internal fun buildRecentChanges(
 internal fun displayImagePathOf(item: ItemEntity): String? =
     if (item.imageDisplayMode == 1 && item.croppedImagePath != null) item.croppedImagePath else item.imagePath
 
-internal fun weakestHint(d1: Double, d2: Double, d3: Double, d4: Double): String {
-    if (d1 <= 0 && d2 <= 0 && d3 <= 0 && d4 <= 0) return ""
-    val min = minOf(d1, d2, d3, d4)
-    return when (min) {
-        d1 -> "利用率偏低，建议处理闲置物品"
-        d2 -> "持有成本偏高，建议评估高成本闲置物"
-        // d3/d4 权重仅 5%（微调项），提示措辞避免夸大其影响（Step 37 审计）
-        d3 -> "流转率偏低（权重较小），有余力可出售回血"
-        else -> "回收率偏低（权重较小），可考虑二手变现"
+// 行动出口提示（Step 38 两维化 + 记录语系）：
+// 两维都高（≥85，与优秀档对齐）时不再硬凑建议，改为正向反馈；否则按较低维给唤醒/评估建议。
+internal fun weakestHint(d1: Double, d2: Double): String {
+    val min = minOf(d1, d2)
+    return when {
+        min >= 85 -> "使用与性价比状态良好，保持记录习惯"
+        d1 <= d2 -> "部分物品在闲置，唤醒它们提升使用率"
+        else -> "日均持有成本偏高，可评估高成本物品"
     }
 }
 
