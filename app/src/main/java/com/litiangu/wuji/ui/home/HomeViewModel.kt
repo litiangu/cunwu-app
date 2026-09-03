@@ -3,6 +3,7 @@ package com.litiangu.wuji.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.content.Context
+import android.graphics.BitmapFactory
 import com.litiangu.wuji.data.db.ItemDao
 import com.litiangu.wuji.data.db.CategoryDao
 import com.litiangu.wuji.data.db.ItemStatus
@@ -10,6 +11,7 @@ import com.litiangu.wuji.data.db.TrashDao
 import com.litiangu.wuji.data.db.toTrash
 import com.litiangu.wuji.data.toUiModel
 import com.litiangu.wuji.data.settings.SettingsDataStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.FlowPreview
@@ -47,11 +49,11 @@ class HomeViewModel(
         .map { it.trim() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
-    // 视图密度三态（持久化 DataStore）：list-default / card-2x2 / list-compact。
+    // 视图三态（持久化 DataStore）：Step 40 起对外是枚举 HomeViewMode，磁盘仍存老字符串。
     // 由顶栏下拉菜单显式选择触发，参考 3.5 视图切换按钮状态页面。
-    val viewMode: StateFlow<String> = settings.viewModeFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "list-default")
-    fun setViewMode(mode: String) {
+    val viewMode: StateFlow<HomeViewMode> = settings.viewModeFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HomeViewMode.DEFAULT)
+    fun setViewMode(mode: HomeViewMode) {
         viewModelScope.launch { settings.setViewMode(mode) }
     }
 
@@ -81,14 +83,22 @@ class HomeViewModel(
     private val _itemsLoaded = MutableStateFlow(false)
     val itemsLoaded: StateFlow<Boolean> = _itemsLoaded.asStateFlow()
 
+    // imageAspectRatio（Step 40）：瀑布流（Step 42）要在布局前就知道图片比例，
+    // 否则首帧统一按 1.0f 画、测完再跳变，视觉抖动。这里在流里用 inJustDecodeBounds
+    // 只读文件头（不整图解码）算好，Composable 内只读字段、零 IO。
+    // flowOn(IO)：解码与 toUiModel 随之上 IO 线程，主线程只做最后的 stateIn 收集。
     val items: StateFlow<List<ItemUiModel>> = combine(
         itemDao.observeAll(),
         categoryDao.observeAll(),
     ) { entities, cats ->
         val keyById = cats.associate { it.id to it.colorKey }
-        entities.map { it.toUiModel().copy(categoryKey = it.categoryId?.let { id -> keyById[id] }) }
+        entities.map {
+            val model = it.toUiModel().copy(categoryKey = it.categoryId?.let { id -> keyById[id] })
+            model.copy(imageAspectRatio = readAspectRatio(model.displayImagePath()))
+        }
     }
         .onEach { _itemsLoaded.value = true }
+        .flowOn(Dispatchers.IO)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val privacyMode = settings.privacyModeFlow
@@ -116,4 +126,20 @@ class HomeViewModel(
             itemDao.deleteById(item.id)
         }
     }
+}
+
+/**
+ * 只读图片文件头取宽高比（宽 ÷ 高）。
+ *
+ * `inJustDecodeBounds = true` 时 BitmapFactory 只解析尺寸、不分配像素内存，开销极小，
+ * 所以可以在流里对每个物品都算一遍。无图 / 文件缺失 / 解析失败一律回退 1.0f（正方形），
+ * 保证瀑布流永远拿得到一个可用比例，不会因为脏数据算出 0 或 NaN 把布局撑坏。
+ */
+private fun readAspectRatio(path: String?): Float {
+    if (path.isNullOrBlank()) return 1.0f
+    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, opts)
+    val w = opts.outWidth
+    val h = opts.outHeight
+    return if (w > 0 && h > 0) w.toFloat() / h.toFloat() else 1.0f
 }

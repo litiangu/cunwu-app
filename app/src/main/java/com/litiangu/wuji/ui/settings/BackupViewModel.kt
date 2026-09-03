@@ -16,6 +16,7 @@ import com.litiangu.wuji.data.db.WujiDatabase
 import com.litiangu.wuji.data.settings.BackupFileInfo
 import com.litiangu.wuji.data.settings.DarkModePref
 import com.litiangu.wuji.data.settings.SettingsDataStore
+import com.litiangu.wuji.ui.home.HomeViewMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -139,7 +140,8 @@ class BackupViewModel(
                 hapticFeedback = hapticFeedbackFlow.first(),
                 budgetAnchor = budgetAnchorFlow.first(),
                 monthlyBudgetAnchor = monthlyBudgetAnchorFlow.first(),
-                viewMode = viewModeFlow.first(),
+                // 备份 JSON 仍存 storageKey 字符串（Step 40 enum 化后备份格式不变，跨版本可导入）
+                viewMode = viewModeFlow.first().storageKey,
                 hasLaunchedBefore = hasLaunchedBeforeFlow.first(),
                 lastBackupAt = lastBackupAtFlow.first(),
                 backupReminderOn = backupReminderOnFlow.first(),
@@ -307,7 +309,8 @@ class BackupViewModel(
             setHapticFeedback(payload.settings.hapticFeedback)
             setBudgetAnchor(payload.settings.budgetAnchor)
             setMonthlyBudgetAnchor(payload.settings.monthlyBudgetAnchor)
-            setViewMode(payload.settings.viewMode)
+            // 备份文件里是字符串，走唯一收口转回枚举；未知脏值回退 DEFAULT（与 DataStore 同策略）
+            setViewMode(HomeViewMode.fromStorageKey(payload.settings.viewMode))
             setHasLaunchedBefore(payload.settings.hasLaunchedBefore)
             setLastBackupAt(payload.settings.lastBackupAt)
             setBackupReminderOn(payload.settings.backupReminderOn)

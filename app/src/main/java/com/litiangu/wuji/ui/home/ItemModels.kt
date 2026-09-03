@@ -23,6 +23,10 @@ data class ItemUiModel(
     val imagePath: String? = null,        // 原图路径
     val croppedImagePath: String? = null, // 抠图透明 PNG 路径（Step16）
     val imageDisplayMode: Int = 0,       // 0=原图 1=抠图（Step16）
+    // Step 40：图片宽高比（宽 ÷ 高），由 HomeViewModel 在流里读文件头算好。
+    // 瀑布流（Step 42）布局前就要知道高度，Composable 内再解码会首帧跳变。
+    // 无图 / 解析失败统一 1.0f（正方形），模式 A / C 不使用。
+    val imageAspectRatio: Float = 1.0f,
 ) {
     /**
      * 按展示态选择实际显示的图片路径。

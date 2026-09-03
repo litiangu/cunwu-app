@@ -13,6 +13,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.litiangu.wuji.domain.DEFAULT_DAILY_BUDGET_ANCHOR
 import com.litiangu.wuji.domain.DEFAULT_MONTHLY_BUDGET_ANCHOR
+import com.litiangu.wuji.ui.home.HomeViewMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -43,7 +44,8 @@ private val PRIVACY_MODE_KEY = booleanPreferencesKey("privacy_mode")
 private val HAPTIC_FEEDBACK_KEY = booleanPreferencesKey("haptic_feedback")  // 震动反馈开关
 private val BUDGET_ANCHOR_KEY = doublePreferencesKey("budget_anchor")
 private val MONTHLY_BUDGET_ANCHOR_KEY = doublePreferencesKey("monthly_budget_anchor")
-private val VIEW_MODE_KEY = stringPreferencesKey("view_mode")   // list-default / card-2x2 / list-compact
+// 存 HomeViewMode.storageKey（list-default / card-2x2 / list-compact），字符串口径不变，兼容老用户
+private val VIEW_MODE_KEY = stringPreferencesKey("view_mode")
 private val HAS_LAUNCHED_BEFORE_KEY = booleanPreferencesKey("has_launched_before")  // 首次启动引导标记
 private val LAST_BACKUP_AT_KEY = longPreferencesKey("last_backup_at")            // 上次成功备份时间戳（Step 23）
 private val BACKUP_REMINDER_ON_KEY = booleanPreferencesKey("backup_reminder_on")  // 备份提醒开关（Step 23，默认关，由用户决定是否开启）
@@ -93,12 +95,13 @@ class SettingsDataStore(private val context: Context) {
         context.dataStore.edit { it[MONTHLY_BUDGET_ANCHOR_KEY] = value }
     }
 
-    // 首页视图密度三态（list-default / card-2x2 / list-compact），默认 list-default
-    val viewModeFlow: Flow<String> = context.dataStore.data
-        .map { prefs -> prefs[VIEW_MODE_KEY] ?: "list-default" }
+    // 首页视图三态（Step 40 起对外只暴露枚举 HomeViewMode，磁盘仍存老字符串）。
+    // 字符串 ↔ 枚举的互转全部收口在这两个成员里，上层（ViewModel / UI）不碰字符串。
+    val viewModeFlow: Flow<HomeViewMode> = context.dataStore.data
+        .map { prefs -> HomeViewMode.fromStorageKey(prefs[VIEW_MODE_KEY]) }
 
-    suspend fun setViewMode(mode: String) {
-        context.dataStore.edit { it[VIEW_MODE_KEY] = mode }
+    suspend fun setViewMode(mode: HomeViewMode) {
+        context.dataStore.edit { it[VIEW_MODE_KEY] = mode.storageKey }
     }
 
     // 首次启动引导标记：默认 false（首次）。写入 true 后引导页不再展示。

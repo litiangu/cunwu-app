@@ -92,7 +92,8 @@ fun HomeScreen(
     val itemsLoaded by viewModel.itemsLoaded.collectAsStateWithLifecycle(false)
     val categories by viewModel.categories.collectAsStateWithLifecycle(emptyList())
     val selectedColorKey by viewModel.selectedColorKey.collectAsStateWithLifecycle(null)
-    val viewMode by viewModel.viewMode.collectAsStateWithLifecycle("list-default")
+    // StateFlow 首帧收集用无参版（有参版会先出一帧 initialValue 再跳到真实值）
+    val viewMode by viewModel.viewMode.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle("")
     val searchKeyword by viewModel.searchKeyword.collectAsStateWithLifecycle("")
     val sortKey by viewModel.sortKey.collectAsStateWithLifecycle("date")
@@ -268,7 +269,7 @@ fun HomeScreen(
                 onClick = closeSwipe,
             )
 
-        if (viewMode == "list-default") {
+        if (viewMode == HomeViewMode.DEFAULT) {
             LazyColumn(
                 modifier = listModifier,
                 contentPadding = PaddingValues(
@@ -326,28 +327,31 @@ fun HomeScreen(
                     }
                 } else {
                     items(items = displayed, key = { it.id }) { item ->
-                        SwipeableItemCard(
-                            isOpen = openItemId == item.id,
-                            onOpenChange = { open -> openItemId = if (open) item.id else null },
-                            onEdit = { onEdit(item.id) },
-                            onDelete = { pendingDelete = item; openItemId = null },
-                        ) {
-                            TimelineRow(
-                                item = item,
-                                privacyMasked = privacyMasked,
-                                onClick = {
-                                    val wasOpen = openItemId == item.id
-                                    if (openItemId != null) openItemId = null
-                                    if (!wasOpen) detailItem = item
-                                },
-                                showLine = displayed.size > 1,
-                            )
+                        // 行间距 8dp 加在左滑卡片**外层**：卡内加会把 80dp 行高撑成 88dp，
+                        // 且卡片底部会拖出一条自己的底色。Step 41 分组后此值由组间距接管。
+                        Box(modifier = Modifier.padding(bottom = ItemListSpacing.row)) {
+                            SwipeableItemCard(
+                                isOpen = openItemId == item.id,
+                                onOpenChange = { open -> openItemId = if (open) item.id else null },
+                                onEdit = { onEdit(item.id) },
+                                onDelete = { pendingDelete = item; openItemId = null },
+                            ) {
+                                TimelineRow(
+                                    item = item,
+                                    privacyMasked = privacyMasked,
+                                    onClick = {
+                                        val wasOpen = openItemId == item.id
+                                        if (openItemId != null) openItemId = null
+                                        if (!wasOpen) detailItem = item
+                                    },
+                                )
+                            }
                         }
                     }
                 }
             }
         } else {
-            val cols = if (viewMode == "card-2x2") 2 else 3
+            val cols = if (viewMode == HomeViewMode.CARD) 2 else 3
             LazyVerticalGrid(
                 columns = GridCells.Fixed(cols),
                 modifier = listModifier,
@@ -411,7 +415,7 @@ fun HomeScreen(
                 } else {
                     // 三种视图模式统一使用「左滑露出编辑/删除」，仅按单格面积调整按钮密度：
                     // 2×2 用 Compact（88dp 纯图标），3×3 用 Mini（64dp 纯图标）。
-                    val swipeDensity = if (viewMode == "card-2x2") {
+                    val swipeDensity = if (viewMode == HomeViewMode.CARD) {
                         SwipeActionDensity.Compact
                     } else {
                         SwipeActionDensity.Mini
@@ -423,9 +427,9 @@ fun HomeScreen(
                             onEdit = { onEdit(item.id) },
                             onDelete = { pendingDelete = item; openItemId = null },
                             density = swipeDensity,
-                            cornerRadius = if (viewMode == "card-2x2") WujiRadius.xl else WujiRadius.lg,
+                            cornerRadius = if (viewMode == HomeViewMode.CARD) WujiRadius.xl else WujiRadius.lg,
                         ) {
-                            if (viewMode == "card-2x2") {
+                            if (viewMode == HomeViewMode.CARD) {
                                 ItemGridCard(
                                     item = item,
                                     privacyMasked = privacyMasked,
@@ -510,8 +514,8 @@ fun HomeScreen(
 @Composable
 private fun ViewModeMenuOverlay(
     anchor: androidx.compose.ui.geometry.Rect?,
-    currentMode: String,
-    onPick: (String) -> Unit,
+    currentMode: HomeViewMode,
+    onPick: (HomeViewMode) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val density = LocalDensity.current
@@ -559,21 +563,21 @@ private fun ViewModeMenuOverlay(
                 ViewModeMenuRow(
                     label = "默认列表",
                     icon = Icons.AutoMirrored.Filled.ViewList,
-                    mode = "list-default",
+                    mode = HomeViewMode.DEFAULT,
                     currentMode = currentMode,
                     onPick = onPick,
                 )
                 ViewModeMenuRow(
                     label = "卡片列表 (2X2)",
                     icon = Icons.Filled.GridView,
-                    mode = "card-2x2",
+                    mode = HomeViewMode.CARD,
                     currentMode = currentMode,
                     onPick = onPick,
                 )
                 ViewModeMenuRow(
                     label = "紧凑列表 (3X3)",
                     icon = Icons.Filled.ViewModule,
-                    mode = "list-compact",
+                    mode = HomeViewMode.COMPACT,
                     currentMode = currentMode,
                     onPick = onPick,
                 )
@@ -591,9 +595,9 @@ private fun ViewModeMenuOverlay(
 private fun ViewModeMenuRow(
     label: String,
     icon: ImageVector,
-    mode: String,
-    currentMode: String,
-    onPick: (String) -> Unit,
+    mode: HomeViewMode,
+    currentMode: HomeViewMode,
+    onPick: (HomeViewMode) -> Unit,
 ) {
     val selected = currentMode == mode
     Row(

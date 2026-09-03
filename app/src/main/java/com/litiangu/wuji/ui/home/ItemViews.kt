@@ -27,7 +27,7 @@ import com.litiangu.wuji.ui.theme.WujiSize
 import com.litiangu.wuji.ui.theme.WujiSpace
 
 /**
- * 视图模式 card-2x2 的网格卡：白底卡片（surfaceContainerLowest #FFFFFF）+ 柔和阴影。
+ * 视图模式 HomeViewMode.CARD 的网格卡：白底卡片（surfaceContainerLowest #FFFFFF）+ 柔和阴影。
  * 内容：分类图标圈 + 名称 + 价格 + 右上色点 + 价格右侧"XX天"。
  * 大图位用分类图标占位（图片链路 Step 12）。
  */
@@ -127,7 +127,7 @@ fun ItemGridCard(
 }
 
 /**
- * 视图模式 list-compact 的紧凑格：白底卡片 + 柔和阴影，3 列，信息密度最高。
+ * 视图模式 HomeViewMode.COMPACT 的紧凑格：白底卡片 + 柔和阴影，3 列，信息密度最高。
  */
 @Composable
 fun ItemCompactCell(
