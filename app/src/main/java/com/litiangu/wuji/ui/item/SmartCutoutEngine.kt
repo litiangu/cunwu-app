@@ -387,17 +387,28 @@ object SmartCutoutEngine {
      * - 模糊：Stack Blur（O(n) 近似高斯），替代不可靠的 BlurMaskFilter
      *
      * 合成顺序（从底到顶）：阴影层 → 白边层 → 原始前景
+     *
+     * 修复03：贴纸化前先把前景垫进四边各加 margin（=白边宽度）的透明工作画布。
+     * 原图物体贴近照片底边时，mask 会触到抠图位图的最后一行，直接贴纸化会让触底
+     * 区段的白边/阴影没有渲染空间而整段缺失（bike 前轮底部白边断裂的根因）。
+     * 四个 pad 同步扣减 margin，最终输出尺寸与不加 margin 时逐像素一致。
      */
     private fun applyStickerEffect(cutout: Bitmap, density: Float): Bitmap {
-        val w = cutout.width
-        val h = cutout.height
         val borderWidthPx = (BORDER_WIDTH_DP * density).toInt().coerceAtLeast(2)
         val blurRadiusPx = (SHADOW_BLUR_RADIUS_DP * density).toInt().coerceAtLeast(3)
         val shadowOffX = (SHADOW_OFFSET_X_DP * density).toInt()
         val shadowOffY = (SHADOW_OFFSET_Y_DP * density).toInt()
 
+        // [修复03] 前景先垫进四边加 margin 的透明工作画布，白边永远有地方画
+        val margin = borderWidthPx
+        val work = Bitmap.createBitmap(cutout.width + 2 * margin, cutout.height + 2 * margin, Bitmap.Config.ARGB_8888)
+        Canvas(work).drawBitmap(cutout, margin.toFloat(), margin.toFloat(), null)
+
+        val w = work.width
+        val h = work.height
+
         // 提取 alpha 通道为 byte 数组（高效操作）
-        val alphaBytes = extractAlphaBytes(cutout, w, h)
+        val alphaBytes = extractAlphaBytes(work, w, h)
 
         // 1. 形态学膨胀得到「放大版 alpha」（用于生成白边区域）
         val dilatedBytes = morphologicalDilate(alphaBytes, w, h, borderWidthPx)
@@ -414,11 +425,11 @@ object SmartCutoutEngine {
         // 3. 对边缘带做模糊 → 得到柔和阴影形状
         val shadowShape = stackBlur(edgeBytes, w, h, blurRadiusPx)
 
-        // 4. 合成最终贴纸画布（扩展尺寸以容纳阴影偏移）
-        val padL = blurRadiusPx + maxOf(0, shadowOffX)
-        val padT = blurRadiusPx + maxOf(0, shadowOffY)
-        val padR = blurRadiusPx + maxOf(0, -shadowOffX)
-        val padB = blurRadiusPx + maxOf(0, -shadowOffY)
+        // 4. 合成最终贴纸画布（扩展尺寸以容纳阴影偏移；[修复03] pad 扣减 margin，输出尺寸不变）
+        val padL = (blurRadiusPx + maxOf(0, shadowOffX) - margin).coerceAtLeast(0)
+        val padT = (blurRadiusPx + maxOf(0, shadowOffY) - margin).coerceAtLeast(0)
+        val padR = (blurRadiusPx + maxOf(0, -shadowOffX) - margin).coerceAtLeast(0)
+        val padB = (blurRadiusPx + maxOf(0, -shadowOffY) - margin).coerceAtLeast(0)
         val resultW = w + padL + padR
         val resultH = h + padT + padB
 
@@ -431,8 +442,10 @@ object SmartCutoutEngine {
         // Layer 2（中间）：白边（膨胀区域填白）
         drawWhiteBorder(canvas, dilatedBytes, w, h, padL, padT)
 
-        // Layer 3（顶层）：原始前景（覆盖白边内部，保留清晰主体）
-        canvas.drawBitmap(cutout, padL.toFloat(), padT.toFloat(), null)
+        // Layer 3（顶层）：原始前景（覆盖白边内部，保留清晰主体）。
+        // [修复03] 改画 work（已含 margin），与阴影/白边两层同偏移对齐，绝对位置与修复前一致
+        canvas.drawBitmap(work, padL.toFloat(), padT.toFloat(), null)
+        work.recycle()
 
         return result
     }
