@@ -21,13 +21,20 @@ object ItemCardRadius {
     val gallery = 16.dp    // 模式 C 陈列馆单元格（Step 43）
 }
 
-/** 模式 A 左列头像（56dp 外框内 48dp 圆图 + 1.5dp 分类色描边） */
-object ItemListAvatar {
-    val outerBox = 56.dp   // 外框：48 圆图 + 4 内描边 + 4 描边视觉补偿
-    val size = 48.dp       // 圆图直径
-    val stroke = 1.5.dp    // 分类色描边（visual.foreground）
-    val icon = 20.dp       // 无图时的分类图标
-    val gap = 12.dp        // 圆图 → 右卡水平间距
+/** 模式 A 时间轴左栏（Step 42，参考日历时间轴复刻） */
+object ItemListRail {
+    val dateWidth = 34.dp    // 日期锚区（内容右对齐）
+    val channelWidth = 18.dp // 节点/竖线通道；线中心 = dateWidth + channelWidth / 2
+    val lineWidth = 2.dp     // 竖线宽（outlineVariant，组块级绘制）
+    val nodeOuter = 12.dp    // 节点外径（含背景色环）
+    val nodeRing = 2.dp      // 节点环宽（背景色，把节点与竖线隔开）
+    val nodeInner = 8.dp     // 节点内点（分类色 visual.foreground）
+}
+
+/** 模式 A 卡内缩略图（Step 42：图入卡，56 方图贴卡高，图 2 样式） */
+object ItemListThumb {
+    val size = 56.dp
+    val radius = 16.dp
 }
 
 /** 模式 A 行与组的间距节律（组相关两项 Step 41 启用） */

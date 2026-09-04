@@ -2,7 +2,6 @@ package com.litiangu.wuji.ui.designsystem
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -21,8 +20,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.litiangu.wuji.ui.home.ItemCardRadius
-import com.litiangu.wuji.ui.home.ItemListAvatar
+import com.litiangu.wuji.ui.home.ItemListRail
 import com.litiangu.wuji.ui.home.ItemListRow
+import com.litiangu.wuji.ui.home.ItemListThumb
 import com.litiangu.wuji.ui.home.ItemUiModel
 import com.litiangu.wuji.ui.home.PRIVACY_MASK
 import com.litiangu.wuji.ui.item.decodeImagePath
@@ -31,15 +31,15 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 模式 A（默认列表）单行，Step 40 按 `首页三视图布局规格_v1.md` §2.3 重做。
+ * 模式 A（默认列表）单行，Step 42 按「日历时间轴」参考稿复刻。
  *
- * 相比旧版的三处结构性变化：
- * 1. **删掉时间轴竖线**（原 `drawBehind { drawLine() }`）：时间感改由分组头承担（Step 41）。
- * 2. **删掉内嵌白底卡**：旧版同一张图 decode 两次（左列 40dp + 内嵌卡 40dp），
- *    且内嵌卡塞了日均、分类色点、竖排「已陪伴 / N 天」，信息层级与左列重复。
- * 3. **压成 2 行**：顶行 名称 + 购入日期，底行 价格 + 「已陪伴 N 天」chip，行高固定 80dp。
+ * 结构：左栏日期锚（当日首行显示大字日 + 周几，同日后续行留空）→ 节点通道（当日首行显示
+ * 分类色节点，外圈背景色环把它与竖线隔开）→ 右卡（56 方图圆角 16 贴卡高 + 名称 / 价格 + 陪伴 chip）。
  *
- * 分类识别完全由左列承担：48dp 圆图 + 1.5dp 分类色描边（`visual.foreground`）。
+ * 竖线**不在本组件绘制**：由 HomeScreen 组块 `Box.drawBehind` 统一画全高（跨行缝连续），
+ * 节点画在行内容层，天然盖在线上。
+ *
+ * 相比 Step 41：卡内日期删除（规格 §8 的有意偏离 D6，用户拍板），日期语义由组头月份 + 左栏日承担。
  */
 @Composable
 fun TimelineRow(
@@ -47,6 +47,7 @@ fun TimelineRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     privacyMasked: Boolean = false,
+    showDateAnchor: Boolean = true,
 ) {
     val visual = categoryVisual(item.categoryKey)
     Row(
@@ -55,44 +56,52 @@ fun TimelineRow(
             .height(ItemListRow.height),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 左列：56dp 外框内 48dp 圆图 + 1.5dp 分类色描边（分类的唯一识别信号）
-        val itemBitmap = decodeImagePath(item.displayImagePath())
+        // 左栏：日期锚（34dp，内容右对齐；仅当日首行显示）
         Box(
-            modifier = Modifier.size(ItemListAvatar.outerBox),
-            contentAlignment = Alignment.Center,
+            modifier = Modifier.width(ItemListRail.dateWidth),
+            contentAlignment = Alignment.CenterEnd,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(ItemListAvatar.size)
-                    .border(ItemListAvatar.stroke, visual.foreground, CircleShape)
-                    .clip(CircleShape)
-                    .background(visual.background),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (itemBitmap != null) {
-                    Image(
-                        bitmap = itemBitmap.asImageBitmap(),
-                        contentDescription = item.name,
-                        // Crop：圆内铺满，Fit 会在方形圆里留透明边带露出页面底色
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
+            if (showDateAnchor) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = dayOf(item.purchaseDate),
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
-                } else {
-                    Icon(
-                        imageVector = visual.icon,
-                        contentDescription = null,
-                        tint = visual.foreground,
-                        modifier = Modifier.size(ItemListAvatar.icon),
+                    Text(
+                        text = weekdayOf(item.purchaseDate),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
         }
-        Spacer(Modifier.width(ItemListAvatar.gap))
-        // 右卡：卡片底 + 双行内容，垂直方向用 SpaceBetween 均分剩余空间
-        Column(
+        // 节点通道（18dp）：当日首行显示节点，圆心与组块竖线同轴
+        Box(
+            modifier = Modifier.width(ItemListRail.channelWidth),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (showDateAnchor) {
+                // 外 12dp 背景色环 + 内 8dp 分类色，覆盖在组块竖线之上
+                Box(
+                    modifier = Modifier
+                        .size(ItemListRail.nodeOuter)
+                        .background(MaterialTheme.colorScheme.background, CircleShape)
+                        .padding(ItemListRail.nodeRing)
+                        .background(visual.foreground, CircleShape),
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        // 右卡：缩略图 + 双行内容；底 surfaceContainerLowest，圆角与左滑操作区同为 20dp
+        Row(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxHeight()
+                .height(ItemListRow.height)
                 .clip(RoundedCornerShape(ItemCardRadius.listRow))
                 .background(MaterialTheme.colorScheme.surfaceContainerLowest)
                 .clickable(onClick = onClick)
@@ -100,10 +109,40 @@ fun TimelineRow(
                     horizontal = ItemListRow.paddingH,
                     vertical = ItemListRow.paddingV,
                 ),
-            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 顶行：名称 + 购入日期（yyyy-MM-dd，无「购入」后缀）
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // 缩略图：56 方图圆角 16，贴卡高（80 - 上下 12 = 56 恰好）
+            val itemBitmap = decodeImagePath(item.displayImagePath())
+            Box(
+                modifier = Modifier
+                    .size(ItemListThumb.size)
+                    .clip(RoundedCornerShape(ItemListThumb.radius))
+                    .background(visual.background),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (itemBitmap != null) {
+                    Image(
+                        bitmap = itemBitmap.asImageBitmap(),
+                        contentDescription = item.name,
+                        // Fit：物品完整显示不裁切（Crop 会按短边裁掉 TV/bike 等横图），空白由分类色 tint 底补齐
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Icon(
+                        imageVector = visual.icon,
+                        contentDescription = null,
+                        tint = visual.foreground,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+            // 文本区：名称 / 价格 + 陪伴 chip（卡内日期已删，见计划 D6）
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+            ) {
                 Text(
                     text = item.name,
                     style = MaterialTheme.typography.titleMedium,
@@ -111,55 +150,42 @@ fun TimelineRow(
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
                 )
-                Spacer(Modifier.width(ItemListRow.paddingH))
-                Text(
-                    text = formatPurchaseDate(item.purchaseDate),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            // 底行：价格 + 「已陪伴 N 天」chip
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = if (privacyMasked) PRIVACY_MASK else "¥%,.2f".format(item.netAsset),
-                    // 规格要 18/600，而 Type.kt 的 titleLarge 是 22/700，显式覆写
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                Spacer(Modifier.weight(1f))
-                // chip 底比卡片底抬一档容器色：卡片已是 surfaceContainerLowest，
-                // chip 若同色会完全隐形（规格原文写 lowest，此处为可辨性上调一档）
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(ItemCardRadius.listChip))
-                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "已陪伴 ${item.companionshipDays} 天",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = if (privacyMasked) PRIVACY_MASK else "¥%,.2f".format(item.netAsset),
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
                     )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(ItemCardRadius.listChip))
+                            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = "已陪伴 ${item.companionshipDays} 天",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
         }
     }
 }
 
-private val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA)
+private val dayFormat = SimpleDateFormat("d", Locale.CHINA)
+private val weekdayFormat = SimpleDateFormat("E", Locale.CHINA)
 
-private fun formatPurchaseDate(epochMillis: Long): String = dateFormatter.format(Date(epochMillis))
+private fun dayOf(epochMillis: Long): String = dayFormat.format(Date(epochMillis))
+
+private fun weekdayOf(epochMillis: Long): String = weekdayFormat.format(Date(epochMillis))

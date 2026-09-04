@@ -10,7 +10,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -36,7 +35,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -47,6 +48,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.litiangu.wuji.ui.designsystem.CircleIconButton
 import com.litiangu.wuji.ui.designsystem.TimelineRow
 import com.litiangu.wuji.ui.home.CategoryFilterBar
@@ -59,6 +63,23 @@ import com.litiangu.wuji.ui.theme.WujiSpace
  * 首页常量：一天毫秒数（Step 29 备份阈值天数换算用）。
  */
 private const val DAY_MS = 86_400_000L
+
+// Step 42：月份分桶 / 组头文案 / 当日判定助手。仅组合期（主线程）调用，SimpleDateFormat 套路同 TimelineRow。
+private val monthKeyFormat = SimpleDateFormat("yyyy-MM", Locale.CHINA)
+private val dayKeyFormat = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA)
+private val monthNameFormat = SimpleDateFormat("M月", Locale.CHINA)
+private val yearFormat = SimpleDateFormat("yyyy", Locale.CHINA)
+
+private fun monthKeyOf(epochMillis: Long): String = monthKeyFormat.format(Date(epochMillis))
+
+private fun dayKeyOf(epochMillis: Long): String = dayKeyFormat.format(Date(epochMillis))
+
+private fun monthNameOf(epochMillis: Long): String = monthNameFormat.format(Date(epochMillis))
+
+private fun yearOf(epochMillis: Long): String = yearFormat.format(Date(epochMillis))
+
+/** 模式 A 组内行条目：isFirstOfDay = 同日首行（左栏显示日期锚与节点，后续行留空、线延续） */
+private data class TimelineEntry(val item: ItemUiModel, val isFirstOfDay: Boolean)
 
 /**
  * 首页备份提示行自动消失时长（Step 29）：超期提示显示后停留 30s 自动消失，本会话不再打扰。
@@ -151,6 +172,24 @@ fun HomeScreen(
                     "price" -> if (sortOrder == "asc") list.sortedBy { it.purchasePrice }
                     else list.sortedByDescending { it.purchasePrice }
                     else -> list
+                }
+            }
+    }
+
+    // Step 42：模式 A 按购入月份分组 + 当日首行标记。displayed 已含排序结果，这里只做二次切分；
+    // 不进 VM、不动排序/筛选/搜索（规格 §5.5 明令），回滚只需删这一处 remember 与渲染处 forEach。
+    // groupBy 返回 LinkedHashMap，组序 = 排序结果中各组首次出现的顺序（默认日期降序 → 最新月在最前）。
+    // 已知边界：若按价格排序，同日物品可能不相邻，日期锚会按「相邻比较」重复出现，属可接受行为。
+    val monthGroups = remember(displayed) {
+        displayed
+            .groupBy { monthKeyOf(it.purchaseDate) }
+            .map { (month, itemsInMonth) ->
+                var lastDayKey: String? = null
+                month to itemsInMonth.map { item ->
+                    val dayKey = dayKeyOf(item.purchaseDate)
+                    val entry = TimelineEntry(item, isFirstOfDay = dayKey != lastDayKey)
+                    lastDayKey = dayKey
+                    entry
                 }
             }
     }
@@ -313,7 +352,8 @@ fun HomeScreen(
                             .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
                     )
                 }
-                item { Spacer(Modifier.height(16.dp)) }
+                // 分割线 → 首个组头目标 16dp（组头自带 top 8dp，此处补 8dp，见 ItemSectionHeader 节律）
+                item { Spacer(Modifier.height(ItemListSpacing.row)) }
                 if (displayed.isEmpty()) {
                     item {
                         HomeEmptyState(
@@ -326,25 +366,54 @@ fun HomeScreen(
                         )
                     }
                 } else {
-                    items(items = displayed, key = { it.id }) { item ->
-                        // 行间距 8dp 加在左滑卡片**外层**：卡内加会把 80dp 行高撑成 88dp，
-                        // 且卡片底部会拖出一条自己的底色。Step 41 分组后此值由组间距接管。
-                        Box(modifier = Modifier.padding(bottom = ItemListSpacing.row)) {
-                            SwipeableItemCard(
-                                isOpen = openItemId == item.id,
-                                onOpenChange = { open -> openItemId = if (open) item.id else null },
-                                onEdit = { onEdit(item.id) },
-                                onDelete = { pendingDelete = item; openItemId = null },
+                    // 每组 = 组头（大月份 + 年份 + 件数，图 2 样式）+ 组块（竖线 + 日期锚 + 行列表）。
+                    // 组间 16 / 组上 12 / 行间 8：组头自带 top8+bottom12，组内 spacedBy(8)（Step 42）。
+                    monthGroups.forEach { (monthKey, entries) ->
+                        item(key = "header-$monthKey", contentType = "SectionHeader") {
+                            ItemSectionHeader(
+                                monthName = monthNameOf(entries.first().item.purchaseDate),
+                                year = yearOf(entries.first().item.purchaseDate),
+                                count = entries.size,
+                            )
+                        }
+                        item(key = "group-$monthKey", contentType = "TimelineGroup") {
+                            // 组块：竖线在此统一画全高（跨 8dp 行缝连续），起点 = 首行节点中心（行高一半 40dp）。
+                            // 线中心 x = 日期区 34 + 通道 18/2 = 43dp，与行内节点同轴（令牌同源）。
+                            val lineColor = MaterialTheme.colorScheme.outlineVariant
+                            val lineX = ItemListRail.dateWidth + ItemListRail.channelWidth / 2
+                            Box(
+                                modifier = Modifier.drawBehind {
+                                    drawLine(
+                                        color = lineColor,
+                                        start = Offset(lineX.toPx(), 40.dp.toPx()),
+                                        end = Offset(lineX.toPx(), size.height),
+                                        strokeWidth = ItemListRail.lineWidth.toPx(),
+                                    )
+                                },
                             ) {
-                                TimelineRow(
-                                    item = item,
-                                    privacyMasked = privacyMasked,
-                                    onClick = {
-                                        val wasOpen = openItemId == item.id
-                                        if (openItemId != null) openItemId = null
-                                        if (!wasOpen) detailItem = item
-                                    },
-                                )
+                                Column(verticalArrangement = Arrangement.spacedBy(ItemListSpacing.row)) {
+                                    entries.forEach { entry ->
+                                        SwipeableItemCard(
+                                            isOpen = openItemId == entry.item.id,
+                                            onOpenChange = { open -> openItemId = if (open) entry.item.id else null },
+                                            onEdit = { onEdit(entry.item.id) },
+                                            onDelete = { pendingDelete = entry.item; openItemId = null },
+                                            // 与卡片 20dp 圆角对齐：默认 8dp 会在圆角缝隙露出删除按钮红底
+                                            cornerRadius = ItemCardRadius.listRow,
+                                        ) {
+                                            TimelineRow(
+                                                item = entry.item,
+                                                privacyMasked = privacyMasked,
+                                                showDateAnchor = entry.isFirstOfDay,
+                                                onClick = {
+                                                    val wasOpen = openItemId == entry.item.id
+                                                    if (openItemId != null) openItemId = null
+                                                    if (!wasOpen) detailItem = entry.item
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
