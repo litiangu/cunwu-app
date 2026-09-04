@@ -22,8 +22,8 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsBackupRestore
-import androidx.compose.material.icons.filled.ViewModule
-import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.SpaceDashboard
+import androidx.compose.material.icons.filled.ViewTimeline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -96,7 +96,7 @@ private const val BACKUP_REMINDER_AUTO_HIDE_MS = 30_000L
  * 首页：与 `stitch_app_settings_page_redesign/3.0应用主页-显示添加物品后的页面/screen.png` 1:1 对齐。
  *
  * 顶栏：「你的物品」+ 三圆钮。
- * - 列表切换：点击在按钮处弹出 DropdownMenu 三选项（默认列表 / 卡片 2X2 / 紧凑 3X3），
+ * - 列表切换：点击在按钮处弹出 DropdownMenu 三选项（时间轴 / 瀑布流 / 陈列馆），
  *   参考 3.5 视图切换按钮状态页面，显式选择触发 HomeViewModel.setViewMode，持久化。
  * - 搜索：点击展开内联输入框，300ms 防抖按名称模糊匹配（不区分大小写）。
  *   激活时左侧导航位空，× 取消按钮置于右侧 actions。
@@ -269,7 +269,8 @@ fun HomeScreen(
                         // 这里不放 Popup/DropdownMenu，避免容器矩形穿透圆角。
                         // 菜单位置由按钮 boundsInWindow 决定，渲染在 HomeScreen 父 Box 的最末层。
                         CircleIconButton(
-                            icon = Icons.AutoMirrored.Filled.ViewList,
+                            // [修复04] 图标跟随当前视图模式，与菜单行共用 viewModeIcon 映射
+                            icon = viewModeIcon(viewMode),
                             contentDescription = "列表切换",
                             onClick = { openItemId = null; viewMenuOpen = true },
                             modifier = Modifier.onGloballyPositioned { coords ->
@@ -604,6 +605,16 @@ fun HomeScreen(
 }
 
 /**
+ * 模式 → 图标映射（修复04）：菜单三行与顶部触发按钮共用，单一事实源，
+ * 触发按钮图标跟随当前视图模式。
+ */
+private fun viewModeIcon(mode: HomeViewMode): ImageVector = when (mode) {
+    HomeViewMode.DEFAULT -> Icons.Filled.ViewTimeline
+    HomeViewMode.CARD -> Icons.Filled.SpaceDashboard
+    HomeViewMode.COMPACT -> Icons.Filled.GridView
+}
+
+/**
  * 视图切换菜单 overlay（参考 3.5 视图切换按钮状态页面）：
  * - 全屏透明遮罩，点击关闭。
  * - 菜单本体用 graphicsLayer { shape = RoundedCornerShape(16dp); clip = true } 强制按 16dp 圆角
@@ -659,22 +670,22 @@ private fun ViewModeMenuOverlay(
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 ViewModeMenuRow(
-                    label = "默认列表",
-                    icon = Icons.AutoMirrored.Filled.ViewList,
+                    label = "时间轴",
+                    icon = viewModeIcon(HomeViewMode.DEFAULT),
                     mode = HomeViewMode.DEFAULT,
                     currentMode = currentMode,
                     onPick = onPick,
                 )
                 ViewModeMenuRow(
-                    label = "卡片列表 (2X2)",
-                    icon = Icons.Filled.GridView,
+                    label = "瀑布流",
+                    icon = viewModeIcon(HomeViewMode.CARD),
                     mode = HomeViewMode.CARD,
                     currentMode = currentMode,
                     onPick = onPick,
                 )
                 ViewModeMenuRow(
-                    label = "紧凑列表 (3X3)",
-                    icon = Icons.Filled.ViewModule,
+                    label = "陈列馆",
+                    icon = viewModeIcon(HomeViewMode.COMPACT),
                     mode = HomeViewMode.COMPACT,
                     currentMode = currentMode,
                     onPick = onPick,
