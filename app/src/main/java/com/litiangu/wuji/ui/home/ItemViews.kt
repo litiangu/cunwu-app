@@ -3,8 +3,14 @@ package com.litiangu.wuji.ui.home
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -16,19 +22,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.layout.ContentScale
 import com.litiangu.wuji.ui.designsystem.categoryVisual
-import com.litiangu.wuji.ui.home.PRIVACY_MASK
 import com.litiangu.wuji.ui.item.decodeImagePath
-import com.litiangu.wuji.ui.theme.WujiRadius
 
 /**
- * 视图模式 HomeViewMode.COMPACT 的紧凑格：白底卡片 + 柔和阴影，3 列，信息密度最高。
+ * 模式 C（紧凑列表）陈列馆格（Step 44），规格 §4.3 / §4.4。
+ *
+ * 结构：96×96 方图（图主角，Fit 完整显示，分类色 tint 底）+ 60dp 文案区
+ * （名称 labelMedium 12/700 加粗 + 价格 labelSmall 11/500 弱化灰），单格总高 156dp。
+ *
+ * 有意不放：分类色点（图本身承担识别）、已陪伴天数（无空间）、圆头像（破坏方阵节奏）。
+ * 圆角 16dp（`ItemCardRadius.gallery`）与左滑操作区 `cornerRadius` 同值。
  */
 @Composable
-fun ItemCompactCell(
+fun ItemExhibitCell(
     item: ItemUiModel,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -40,58 +51,63 @@ fun ItemCompactCell(
             .fillMaxWidth()
             .shadow(
                 elevation = 2.dp,
-                shape = RoundedCornerShape(WujiRadius.lg),
+                shape = RoundedCornerShape(ItemCardRadius.gallery),
                 ambientColor = Color.Black.copy(alpha = 0.03f),
                 spotColor = Color.Black.copy(alpha = 0.03f),
             )
-            .clip(RoundedCornerShape(WujiRadius.lg))
+            .clip(RoundedCornerShape(ItemCardRadius.gallery))
             .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-            .clickable(onClick = onClick)
-            .padding(8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .clickable(onClick = onClick),
     ) {
-        // 图标圈（有图显示实际图片，无图回退分类图标）
-        val compactBitmap = decodeImagePath(item.displayImagePath())
-        if (compactBitmap != null) {
-            Image(
-                bitmap = compactBitmap.asImageBitmap(),
-                contentDescription = item.name,
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape),
-                contentScale = ContentScale.Crop,
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(visual.background),
-                contentAlignment = Alignment.Center,
-            ) {
+        // 图区：96×96 方图（与列宽一致），Fit 完整显示，底色承担分类识别
+        val cellBitmap = decodeImagePath(item.displayImagePath())
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(ItemGalleryLayout.imageSize)
+                .background(visual.background),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (cellBitmap != null) {
+                Image(
+                    bitmap = cellBitmap.asImageBitmap(),
+                    contentDescription = item.name,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
                 Icon(
                     imageVector = visual.icon,
                     contentDescription = null,
                     tint = visual.foreground,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(24.dp),
                 )
             }
         }
-        Text(
-            text = item.name,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = if (privacyMasked) PRIVACY_MASK else "¥%,.2f".format(item.netAsset),
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        // 文案区：固定 60dp，名称加粗提升检索性，价格弱化为灰色补充信息
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(ItemGalleryLayout.contentHeight)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+        ) {
+            Text(
+                text = item.name,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = if (privacyMasked) PRIVACY_MASK else "¥%,.2f".format(item.netAsset),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }

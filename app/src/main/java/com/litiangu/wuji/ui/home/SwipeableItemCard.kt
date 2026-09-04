@@ -65,6 +65,9 @@ enum class SwipeActionDensity(
 
     /** 紧凑列表 3×3：最窄列上下堆叠，纯图标。单格宽约 96dp，按钮触达面仍≥44dp 高 */
     Mini(actionWidth = 56.dp, iconSize = 18.dp, showLabel = false, stacked = true),
+
+    /** 陈列馆 3×3（Step 44）：40dp 单列堆叠纯图标，溢出仅 28dp，配合格外 clipToBounds 消除邻卡重叠 */
+    Gallery(actionWidth = 40.dp, iconSize = 18.dp, showLabel = false, stacked = true),
 }
 
 /**

@@ -39,6 +39,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -525,25 +526,28 @@ fun HomeScreen(
                         )
                     }
                 } else {
-                    // 左滑 Mini 密度（56dp 上下堆叠纯图标）；圆角与紧凑格同为 8dp
+                    // 陈列馆（Step 44）：左滑 Gallery 密度（40dp 单列）+ 格级 clipToBounds，
+                    // 展开卡越界部分被裁掉，不压左邻卡；圆角与陈列馆格同为 16dp
                     gridItems(items = displayed, key = { it.id }) { item ->
-                        SwipeableItemCard(
-                            isOpen = openItemId == item.id,
-                            onOpenChange = { open -> openItemId = if (open) item.id else null },
-                            onEdit = { onEdit(item.id) },
-                            onDelete = { pendingDelete = item; openItemId = null },
-                            density = SwipeActionDensity.Mini,
-                            cornerRadius = WujiRadius.lg,
-                        ) {
-                            ItemCompactCell(
-                                item = item,
-                                privacyMasked = privacyMasked,
-                                onClick = {
-                                    val wasOpen = openItemId == item.id
-                                    if (openItemId != null) openItemId = null
-                                    if (!wasOpen) detailItem = item
-                                },
-                            )
+                        Box(modifier = Modifier.clipToBounds()) {
+                            SwipeableItemCard(
+                                isOpen = openItemId == item.id,
+                                onOpenChange = { open -> openItemId = if (open) item.id else null },
+                                onEdit = { onEdit(item.id) },
+                                onDelete = { pendingDelete = item; openItemId = null },
+                                density = SwipeActionDensity.Gallery,
+                                cornerRadius = ItemCardRadius.gallery,
+                            ) {
+                                ItemExhibitCell(
+                                    item = item,
+                                    privacyMasked = privacyMasked,
+                                    onClick = {
+                                        val wasOpen = openItemId == item.id
+                                        if (openItemId != null) openItemId = null
+                                        if (!wasOpen) detailItem = item
+                                    },
+                                )
+                            }
                         }
                     }
                 }
