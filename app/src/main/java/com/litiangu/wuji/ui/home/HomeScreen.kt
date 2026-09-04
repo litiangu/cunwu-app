@@ -235,6 +235,8 @@ fun HomeScreen(
                             onValueChange = viewModel::setSearchQuery,
                             placeholder = { Text("搜索物品名称") },
                             singleLine = true,
+                            // [修复05] 圆角对齐下方卡片（模式 A/B 卡同为 20dp 令牌），默认 4dp 太尖
+                            shape = RoundedCornerShape(ItemCardRadius.listRow),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(end = WujiSpace.sm)
