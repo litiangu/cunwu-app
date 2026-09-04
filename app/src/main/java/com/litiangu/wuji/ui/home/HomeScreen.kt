@@ -10,6 +10,10 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -47,6 +51,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.litiangu.wuji.data.db.CategoryEntity
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -419,10 +424,73 @@ fun HomeScreen(
                     }
                 }
             }
+        } else if (viewMode == HomeViewMode.CARD) {
+            // 模式 B 瀑布流（Step 43）：Adaptive(150dp) 在 360dp 屏恰好 2 列，宽屏自适应加列
+            LazyVerticalStaggeredGrid(
+                columns = StaggeredGridCells.Adaptive(ItemWaterfallLayout.columnWidth),
+                modifier = listModifier,
+                contentPadding = PaddingValues(
+                    start = WujiSpace.lg,
+                    end = WujiSpace.lg,
+                    top = WujiSpace.md,
+                    bottom = 0.dp,
+                ),
+                verticalItemSpacing = ItemWaterfallLayout.gap,
+                horizontalArrangement = Arrangement.spacedBy(ItemWaterfallLayout.gap),
+            ) {
+                // 头部整块合成一个跨列 item（内容与 COMPACT 臂共用 ModeGridHeader）。
+                // staggered 的 verticalItemSpacing 同样作用于 item 之间，块内补 4dp 与旧 grid 节奏一致。
+                item(span = StaggeredGridItemSpan.FullLine) {
+                    ModeGridHeader(
+                        overview = overview,
+                        privacyMasked = privacyMasked,
+                        bannerVisible = bannerVisible,
+                        backupReminderText = backupReminderText,
+                        onBackupClick = { bannerVisible = false; onBackup() },
+                        onBannerDismiss = { bannerVisible = false },
+                        categories = categories,
+                        selectedCategoryKey = selectedColorKey,
+                        onSelectCategory = { openItemId = null; viewModel.selectColorKey(it) },
+                        onOpenFilter = { openItemId = null; showFilter = true },
+                        filterActive = filterActive,
+                    )
+                }
+                if (displayed.isEmpty()) {
+                    item(span = StaggeredGridItemSpan.FullLine) {
+                        ModeGridEmpty(
+                            globalEmpty = items.isEmpty(),
+                            keyword = searchKeyword,
+                            isCategoryFiltered = selectedColorKey != null || statusFilter.isNotEmpty(),
+                        )
+                    }
+                } else {
+                    // 左滑 Compact 密度（64dp 上下堆叠纯图标，沿用旧 2×2 口径）；圆角与卡片同为 20dp
+                    staggeredItems(items = displayed, key = { it.id }) { item ->
+                        SwipeableItemCard(
+                            isOpen = openItemId == item.id,
+                            onOpenChange = { open -> openItemId = if (open) item.id else null },
+                            onEdit = { onEdit(item.id) },
+                            onDelete = { pendingDelete = item; openItemId = null },
+                            density = SwipeActionDensity.Compact,
+                            cornerRadius = ItemCardRadius.waterfall,
+                        ) {
+                            ItemWaterfallCard(
+                                item = item,
+                                privacyMasked = privacyMasked,
+                                onClick = {
+                                    val wasOpen = openItemId == item.id
+                                    if (openItemId != null) openItemId = null
+                                    if (!wasOpen) detailItem = item
+                                },
+                            )
+                        }
+                    }
+                }
+            }
         } else {
-            val cols = if (viewMode == HomeViewMode.CARD) 2 else 3
+            // 模式 C 紧凑列表：暂沿用旧 3 列等高网格（Step 44 陈列馆改造时重写此臂）
             LazyVerticalGrid(
-                columns = GridCells.Fixed(cols),
+                columns = GridCells.Fixed(3),
                 modifier = listModifier,
                 contentPadding = PaddingValues(
                     start = WujiSpace.lg,
@@ -433,92 +501,49 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                // 头部整块合成一个跨列 item。LazyVerticalGrid 的 verticalArrangement(12dp)
-                // 作用于「行与行之间」，头部若拆成多个 item 会被额外插入 12dp，
-                // 使分割线到首行卡片的间距大于默认列表。合并后由块内 Spacer 精确控制。
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        HomeOverview(overview = overview, privacyMasked = privacyMasked)
-                        if (bannerVisible && backupReminderText != null) {
-                            Spacer(Modifier.height(WujiSpace.md))
-                            BackupReminderBanner(
-                                text = backupReminderText,
-                                onClick = {
-                                    bannerVisible = false
-                                    onBackup()
-                                },
-                                onDismiss = { bannerVisible = false },
-                            )
-                            Spacer(Modifier.height(WujiSpace.md))
-                        }
-                        CategoryFilterBar(
-                            categories = categories,
-                            selected = selectedColorKey,
-                            onSelect = { openItemId = null; viewModel.selectColorKey(it) },
-                            onFilter = { openItemId = null; showFilter = true },
-                            filterActive = filterActive,
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp)
-                                .height(1.dp)
-                                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                        )
-                        // 分割线 → 首行卡片目标间距 16dp（与默认列表一致）；
-                        // 行间 verticalArrangement 已提供 12dp，此处补 4dp。
-                        Spacer(Modifier.height(4.dp))
-                    }
+                    ModeGridHeader(
+                        overview = overview,
+                        privacyMasked = privacyMasked,
+                        bannerVisible = bannerVisible,
+                        backupReminderText = backupReminderText,
+                        onBackupClick = { bannerVisible = false; onBackup() },
+                        onBannerDismiss = { bannerVisible = false },
+                        categories = categories,
+                        selectedCategoryKey = selectedColorKey,
+                        onSelectCategory = { openItemId = null; viewModel.selectColorKey(it) },
+                        onOpenFilter = { openItemId = null; showFilter = true },
+                        filterActive = filterActive,
+                    )
                 }
                 if (displayed.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        HomeEmptyState(
+                        ModeGridEmpty(
                             globalEmpty = items.isEmpty(),
                             keyword = searchKeyword,
                             isCategoryFiltered = selectedColorKey != null || statusFilter.isNotEmpty(),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = WujiSpace.xl),
                         )
                     }
                 } else {
-                    // 三种视图模式统一使用「左滑露出编辑/删除」，仅按单格面积调整按钮密度：
-                    // 2×2 用 Compact（88dp 纯图标），3×3 用 Mini（64dp 纯图标）。
-                    val swipeDensity = if (viewMode == HomeViewMode.CARD) {
-                        SwipeActionDensity.Compact
-                    } else {
-                        SwipeActionDensity.Mini
-                    }
+                    // 左滑 Mini 密度（56dp 上下堆叠纯图标）；圆角与紧凑格同为 8dp
                     gridItems(items = displayed, key = { it.id }) { item ->
                         SwipeableItemCard(
                             isOpen = openItemId == item.id,
                             onOpenChange = { open -> openItemId = if (open) item.id else null },
                             onEdit = { onEdit(item.id) },
                             onDelete = { pendingDelete = item; openItemId = null },
-                            density = swipeDensity,
-                            cornerRadius = if (viewMode == HomeViewMode.CARD) WujiRadius.xl else WujiRadius.lg,
+                            density = SwipeActionDensity.Mini,
+                            cornerRadius = WujiRadius.lg,
                         ) {
-                            if (viewMode == HomeViewMode.CARD) {
-                                ItemGridCard(
-                                    item = item,
-                                    privacyMasked = privacyMasked,
-                                    onClick = {
-                                        val wasOpen = openItemId == item.id
+                            ItemCompactCell(
+                                item = item,
+                                privacyMasked = privacyMasked,
+                                onClick = {
+                                    val wasOpen = openItemId == item.id
                                     if (openItemId != null) openItemId = null
                                     if (!wasOpen) detailItem = item
-                                    },
-                                )
-                            } else {
-                                ItemCompactCell(
-                                    item = item,
-                                    privacyMasked = privacyMasked,
-                                    onClick = {
-                                        val wasOpen = openItemId == item.id
-                                    if (openItemId != null) openItemId = null
-                                    if (!wasOpen) detailItem = item
-                                    },
-                                )
-                            }
+                                },
+                            )
                         }
                     }
                 }
@@ -805,4 +830,69 @@ private fun HomeEmptyState(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+/**
+ * 网格系视图（B 瀑布流 / C 紧凑）共用的头部合并块：
+ * 资产概览 + 备份横幅 + 分类筛选条 + 1dp 分割线 + 4dp 补偿。
+ * 容器的 item 间距（12dp）已计入节奏，块内补 4dp 使分割线 → 首行卡片 = 16dp，与模式 A 一致。
+ */
+@Composable
+private fun ModeGridHeader(
+    overview: HomeOverview,
+    privacyMasked: Boolean,
+    bannerVisible: Boolean,
+    backupReminderText: String?,
+    onBackupClick: () -> Unit,
+    onBannerDismiss: () -> Unit,
+    categories: List<CategoryEntity>,
+    selectedCategoryKey: String?,
+    onSelectCategory: (String?) -> Unit,
+    onOpenFilter: () -> Unit,
+    filterActive: Boolean,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        HomeOverview(overview = overview, privacyMasked = privacyMasked)
+        if (bannerVisible && backupReminderText != null) {
+            Spacer(Modifier.height(WujiSpace.md))
+            BackupReminderBanner(
+                text = backupReminderText,
+                onClick = onBackupClick,
+                onDismiss = onBannerDismiss,
+            )
+            Spacer(Modifier.height(WujiSpace.md))
+        }
+        CategoryFilterBar(
+            categories = categories,
+            selected = selectedCategoryKey,
+            onSelect = onSelectCategory,
+            onFilter = onOpenFilter,
+            filterActive = filterActive,
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp)
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        )
+        Spacer(Modifier.height(4.dp))
+    }
+}
+
+/** 网格系视图（B/C 共用）空态，跨全行 */
+@Composable
+private fun ModeGridEmpty(
+    globalEmpty: Boolean,
+    keyword: String,
+    isCategoryFiltered: Boolean,
+) {
+    HomeEmptyState(
+        globalEmpty = globalEmpty,
+        keyword = keyword,
+        isCategoryFiltered = isCategoryFiltered,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = WujiSpace.xl),
+    )
 }
