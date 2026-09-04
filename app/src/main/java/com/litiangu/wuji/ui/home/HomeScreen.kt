@@ -63,6 +63,7 @@ import com.litiangu.wuji.ui.home.CategoryFilterBar
 import com.litiangu.wuji.ui.onboarding.AppSplash
 import com.litiangu.wuji.ui.theme.BrandOrange
 import com.litiangu.wuji.ui.theme.WujiRadius
+import com.litiangu.wuji.ui.theme.WujiSize
 import com.litiangu.wuji.ui.theme.WujiSpace
 
 /**
@@ -324,7 +325,7 @@ fun HomeScreen(
                     start = WujiSpace.lg,
                     end = WujiSpace.lg,
                     top = WujiSpace.md,
-                    bottom = 0.dp,
+                    bottom = ListBottomAvoidance,
                 ),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
@@ -437,7 +438,7 @@ fun HomeScreen(
                     start = WujiSpace.lg,
                     end = WujiSpace.lg,
                     top = WujiSpace.md,
-                    bottom = 0.dp,
+                    bottom = ListBottomAvoidance,
                 ),
                 verticalItemSpacing = ItemWaterfallLayout.gap,
                 horizontalArrangement = Arrangement.spacedBy(ItemWaterfallLayout.gap),
@@ -500,7 +501,7 @@ fun HomeScreen(
                     start = WujiSpace.lg,
                     end = WujiSpace.lg,
                     top = WujiSpace.md,
-                    bottom = 0.dp,
+                    bottom = ListBottomAvoidance,
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -615,6 +616,12 @@ private fun viewModeIcon(mode: HomeViewMode): ImageVector = when (mode) {
     HomeViewMode.CARD -> Icons.Filled.SpaceDashboard
     HomeViewMode.COMPACT -> Icons.Filled.GridView
 }
+
+// [修复06] 列表底部避让悬浮胶囊底栏：胶囊 68dp + FAB 凸出 16dp + 8dp 呼吸。
+// 底栏在 WujiApp 层悬浮于内容上方（Scaffold 无 bottomBar 占位，padding.bottom 仅含系统手势条），
+// 原来三个列表 contentPadding bottom = 0，末卡静止时垫在胶囊后，左滑的编辑/删除操作区被盖住无法点击。
+private val ListBottomAvoidance =
+    WujiSize.bottomBarHeight + WujiSize.bottomBarFabProtrude + WujiSpace.sm
 
 /**
  * 视图切换菜单 overlay（参考 3.5 视图切换按钮状态页面）：
