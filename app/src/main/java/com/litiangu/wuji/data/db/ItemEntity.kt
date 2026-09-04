@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
 // 物品表。字段对齐《添加页面 + 物品信息表单功能》与《健康分加权模型设计草案》。
 // categoryId 可空：未分类物品 = null（删除分类时置空，不级联删物品）。
 // purchaseDate 存 epoch 毫秒；陪伴天数 = 现在 - purchaseDate。
-// healthScore 为健康分快照（可空）：Step3 计算引擎写入，当前仅占位。
+// healthScore 健康分快照列：已弃用（修复07）——首页/分析页均走 domain 引擎实时计算，保存时固定写 null。
 @Entity(
     tableName = "items",
     foreignKeys = [ForeignKey(
@@ -33,7 +33,7 @@ data class ItemEntity(
     val imagePath: String? = null,
     val croppedImagePath: String? = null,
     val imageDisplayMode: Int = 0,    // 图片展示态：0=原图 1=抠图（Step16）
-    val healthScore: Int? = null,   // 健康分快照（Step3 填充）
+    val healthScore: Int? = null,   // 健康分快照列，已弃用（修复07）：恒为 null，等级改由引擎实时计算
     // 修复01：附加费用 / 收益金额子项 JSON 序列化（kotlinx.serialization），保存用户改过的标签/金额。
     // 默认 "[]" = 无子项，进入编辑页时 VM init 走默认项回退（买配件/维修费用/二手变现）。
     val extraItemsJson: String = "[]",

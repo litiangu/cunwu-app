@@ -164,7 +164,8 @@ fun HomeScreen(
         else "已 ${daysSince} 天未备份，建议立即备份"
     }
 
-    val overview = remember(items) { items.toOverview() }
+    val healthLabel by viewModel.healthLabel.collectAsStateWithLifecycle("—")
+    val overview = remember(items, healthLabel) { items.toOverview(healthLabel) }
 
     // 组合过滤 + 排序：分类 chip AND 搜索 AND 状态 filter AND 排序（三条件叠加）
     val displayed = remember(items, selectedColorKey, searchKeyword, sortKey, sortOrder, statusFilter) {

@@ -14,7 +14,6 @@ fun ItemEntity.toUiModel(): ItemUiModel = ItemUiModel(
     soldDate = null,
     note = "",
     netAsset = purchasePrice + extraCost - resaleValue,
-    healthScore = (healthScore ?: 0).toDouble(),
     companionshipDays = frozenCompanionshipDays(purchaseDate),
     status = status,
     imagePath = imagePath,               // 原图路径（展示态选择见 ItemUiModel.displayImagePath()）

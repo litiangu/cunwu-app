@@ -16,7 +16,6 @@ data class ItemUiModel(
     val soldDate: Long?,
     val note: String,
     val netAsset: Double,
-    val healthScore: Double,
     val companionshipDays: Int,
     val status: ItemStatus,
     val categoryKey: String? = null,
@@ -51,22 +50,17 @@ data class HomeOverview(
  * 从物品列表算出首页资产概览。
  * - 总购入 / 总附加 / 总变现 / 净资产：全物品聚合（Σ(购入+附加) − Σ(变现)）
  * - 使用率：非售出物品占比（占位，可后续替换为「正在使用天数 / 总陪伴天数」语义）
- * - 消费健康等级：80/60 双阈映射三态（≥80 优 / 60-79 良 / <60 中差），空库显示 "—"
+ * - 消费健康等级：[修复07] 起由外部传入（HomeViewModel 实时调 v5 健康分引擎，与分析页
+ *   同源四档 优/良/中/差，空库 "—"）。原实现平均 ItemUiModel.healthScore 快照，
+ *   而该快照列从未被写入（恒 0），导致首页恒显「差」、与分析页实时分数矛盾。
  */
-fun List<ItemUiModel>.toOverview(): HomeOverview {
+fun List<ItemUiModel>.toOverview(healthLabel: String): HomeOverview {
     val totalPurchase = sumOf { it.purchasePrice }
     val totalAdd = sumOf { it.addPrice }
     val totalSold = sumOf { it.soldPrice }
     val netAsset = totalPurchase + totalAdd - totalSold
     val useRatePercent = if (isEmpty()) 0.0 else (count { it.soldDate == null }.toDouble() / size) * 100.0
     val useStateLabel = if (isEmpty()) "暂无数据" else "正在使用"
-    val avgHealth = if (isEmpty()) 0.0 else sumOf { it.healthScore } / size
-    val healthLabel = when {
-        isEmpty() -> "—"
-        avgHealth >= 80.0 -> "优"
-        avgHealth >= 60.0 -> "良"
-        else -> "差"
-    }
     return HomeOverview(
         totalPurchase = totalPurchase,
         totalAdd = totalAdd,

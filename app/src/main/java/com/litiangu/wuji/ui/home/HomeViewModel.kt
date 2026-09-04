@@ -8,8 +8,10 @@ import com.litiangu.wuji.data.db.ItemDao
 import com.litiangu.wuji.data.db.CategoryDao
 import com.litiangu.wuji.data.db.ItemStatus
 import com.litiangu.wuji.data.db.TrashDao
+import com.litiangu.wuji.data.db.toItemInput
 import com.litiangu.wuji.data.db.toTrash
 import com.litiangu.wuji.data.toUiModel
+import com.litiangu.wuji.domain.computeHealthScore
 import com.litiangu.wuji.data.settings.SettingsDataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -100,6 +102,20 @@ class HomeViewModel(
         .onEach { _itemsLoaded.value = true }
         .flowOn(Dispatchers.IO)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // [修复07] 消费健康等级：与分析页同源，实时调 v5 健康分引擎（computeHealthScore）。
+    // 原实现平均 ItemUiModel.healthScore，而该值来自 DB 快照列 healthScore——此列从未被
+    // 写入（保存物品时固定 null），恒 0 分导致首页恒显「差」，与分析页实时 100 分互相矛盾。
+    // 锚点读同一 DataStore 流（budgetAnchorFlow），自定义每日预算后两页保持一致；空库显示 "—"。
+    val healthLabel: StateFlow<String> = combine(
+        itemDao.observeAll(),
+        settings.budgetAnchorFlow,
+    ) { entities, anchor ->
+        if (entities.isEmpty()) "—"
+        else computeHealthScore(entities.map { it.toItemInput() }, anchor).grade.label
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "—")
 
     val privacyMode = settings.privacyModeFlow
     val darkMode = settings.darkModeFlow

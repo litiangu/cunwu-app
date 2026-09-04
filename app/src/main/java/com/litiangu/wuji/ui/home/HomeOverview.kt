@@ -37,7 +37,7 @@ import com.litiangu.wuji.ui.theme.WujiSpace
  *
  * 卡1 资产总额（橙 tint + 钱图标）｜卡2 物品总数（橙 tint + 盒图标）
  * 卡3 使用状态（蓝 tint + 图表图标 + 副标 "正在使用/暂无数据"）
- * 卡4 消费健康（绿 tint + 盾图标 + 绿字 "优/良/中差/—"）
+ * 卡4 消费健康（绿 tint + 盾图标 + 等级 "优/良/中/差/—"，[修复07] 与分析页同源四档）
  */
 @Composable
 fun HomeOverview(
@@ -104,10 +104,11 @@ fun HomeOverview(
     }
 }
 
-// 消费健康图标/文字色（文档 §5 四态色板：优绿 / 良蓝 / 差橙黄 / 空灰）
+// 消费健康图标/文字色（文档 §5 色板 + [修复07] 新增「中」档：优绿 / 良蓝 / 中黄 / 差橙 / 空灰）
 private fun healthColor(label: String): Color = when (label) {
     "优" -> Color(0xFF52C41A)
     "良" -> Color(0xFF1677FF)
+    "中" -> Color(0xFFFFCC00)
     "差" -> Color(0xFFFA8C16)
     else -> Color(0xFFBFBFBF)
 }
