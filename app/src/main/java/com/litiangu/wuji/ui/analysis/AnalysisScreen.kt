@@ -7,7 +7,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -971,14 +973,16 @@ private fun categoryDotColorAware(colorKey: String?): Color {
     }
 }
 
-// ===== 近半年支出趋势：6 月折线 + 面积渐变 + 总物品数量副柱 + 数据点（Step 35 增强）=====
-// 新增：点击数据点 tooltip（Box overlay + selectedIdx，金额脱敏）+ 底部环比摘要行；
-// 副柱 4dp→10dp、alpha 0.2→0.25 提高可读性。
+// ===== 近半年支出趋势：支出额 / 件数 双独立趋势图 + 右上角 pill 切换（Step 50）=====
+// Step 50 重构：原「支出折线 + 物品数量副柱」叠画拆为两张同款折线图，切换钮即图例（图例行删除）；
+// 环比徽章从标题右上角移到标题下方，数据口径跟随当前页（金额环比 / 件数环比）。
 @Composable
 private fun TrendCard(state: AnalysisUiState, privacyMasked: Boolean) {
     AnalysisCardBox {
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            // 标题 + 环比徽章（Step 35 修订：环比从底部移到右上角，更易注意到变化）
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // 当前页：0 = 支出额，1 = 件数
+            var trendTab by remember { mutableIntStateOf(0) }
+            // 标题行：标题居左占满，切换钮居右
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -992,153 +996,54 @@ private fun TrendCard(state: AnalysisUiState, privacyMasked: Boolean) {
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
                 )
-                MomBadge(state.monthlyTrend)
+                TrendMetricToggle(
+                    selected = trendTab,
+                    onSelect = { trendTab = it },
+                )
             }
-            if (state.monthlyTrend.all { it.amount <= 0.0 }) {
+            // 环比徽章（Step 50 移位）：标题下方左对齐；数据口径跟随切换页
+            MomBadge(
+                if (trendTab == 0) state.monthlyTrend.map { it.amount }
+                else state.monthlyTrend.map { it.itemDelta.toDouble() }
+            )
+            // 当前页的数据序列（金额看 amount，件数看净变动 itemDelta，可为负）
+            val activeValues = if (trendTab == 0) state.monthlyTrend.map { it.amount }
+            else state.monthlyTrend.map { it.itemDelta.toDouble() }
+            if (activeValues.all { it <= 0.0 }) {
                 Text(
-                    "近半年暂无支出数据",
+                    if (trendTab == 0) "近半年暂无支出数据" else "近半年暂无物品变动",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                // 图例
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    LegendDot(
-                        color = MaterialTheme.colorScheme.primary,
-                        label = "支出金额",
-                        line = true,
-                    )
-                    LegendDot(
-                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f),
-                        label = "总物品数量",
-                        line = false,
-                    )
-                }
                 // 图表（颜色须在 Composable 作用域取值，DrawScope 内不能读 MaterialTheme）
-                val chartPrimary = MaterialTheme.colorScheme.primary
-                val chartSecondary = MaterialTheme.colorScheme.secondary
-                val pointInner = MaterialTheme.colorScheme.surfaceContainerLowest
-                val maxAmount = state.monthlyTrend.maxOf { it.amount }.coerceAtLeast(1.0)
-                var selectedIdx by remember { mutableStateOf<Int?>(null) }
-
-                BoxWithConstraints {
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                        .pointerInput(state.monthlyTrend) {
-                            detectTapGestures { pos ->
-                                val n = state.monthlyTrend.size
-                                if (n < 2) return@detectTapGestures
-                                val padPx = 16.dp.toPx()
-                                val stepPx = ((size.width - padPx * 2) / (n - 1)).coerceAtLeast(1f)
-                                val idx = ((pos.x - padPx) / stepPx).roundToInt().coerceIn(0, n - 1)
-                                selectedIdx = if (selectedIdx == idx) null else idx
-                            }
-                        },
-                ) {
-                    val w = size.width
-                    val h = size.height
-                    val pad = 16.dp.toPx()
-                    val maxDelta = maxOf(state.monthlyTrend.maxOf { it.itemDelta }, 1)
-                    val stepX = (w - pad * 2) / (state.monthlyTrend.size - 1).coerceAtLeast(1)
-                    val chartH = h - pad * 2
-
-                    // 1. 副柱（总物品数量，半透明；净变动为负时不画）— Step 35 加宽提亮
-                    state.monthlyTrend.forEachIndexed { i, p ->
-                        if (p.itemDelta <= 0) return@forEachIndexed
-                        val barH = chartH * (p.itemDelta.toFloat() / maxDelta)
-                        val x = pad + stepX * i - 5.dp.toPx()
-                        drawRect(
-                            color = chartSecondary.copy(alpha = 0.25f),
-                            topLeft = Offset(x, h - pad - barH),
-                            size = Size(10.dp.toPx(), barH),
-                        )
-                    }
-                    // 2. 折线路径 + 面积路径
-                    val path = Path()
-                    val fillPath = Path()
-                    state.monthlyTrend.forEachIndexed { i, p ->
-                        val x = pad + stepX * i
-                        val y = pad + chartH * (1f - (p.amount / maxAmount).toFloat())
-                        if (i == 0) {
-                            path.moveTo(x, y)
-                            fillPath.moveTo(x, h - pad)
-                            fillPath.lineTo(x, y)
+                TrendLineChart(
+                    values = activeValues,
+                    tooltipText = { idx ->
+                        val p = state.monthlyTrend[idx]
+                        if (trendTab == 0) {
+                            "${p.label} " + if (privacyMasked) PRIVACY_MASK else formatYuan(p.amount)
                         } else {
-                            path.lineTo(x, y)
-                            fillPath.lineTo(x, y)
+                            "${p.label} ${p.itemDelta}件"
                         }
-                        if (i == state.monthlyTrend.lastIndex) {
-                            fillPath.lineTo(x, h - pad)
-                        }
-                    }
-                    fillPath.close()
-                    // 3. 面积渐变（上深下透明）
-                    drawPath(
-                        path = fillPath,
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                chartPrimary.copy(alpha = 0.3f),
-                                chartPrimary.copy(alpha = 0f),
-                            ),
-                            startY = pad,
-                            endY = h - pad,
-                        ),
-                    )
-                    // 4. 折线 stroke
-                    drawPath(
-                        path = path,
-                        color = chartPrimary,
-                        style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
-                    )
-                    // 5. 数据点（橙点 + 白芯）
-                    state.monthlyTrend.forEachIndexed { i, p ->
-                        val x = pad + stepX * i
-                        val y = pad + chartH * (1f - (p.amount / maxAmount).toFloat())
-                        drawCircle(chartPrimary, radius = 4.dp.toPx(), center = Offset(x, y))
-                        drawCircle(pointInner, radius = 1.5.dp.toPx(), center = Offset(x, y))
-                    }
-                }
-                    // tooltip 气泡（Step 35）：dp 坐标与 Canvas 绘制公式同源；96dp 定宽防文本抖动
-                    selectedIdx?.let { idx ->
-                        if (idx in state.monthlyTrend.indices) {
-                            val p = state.monthlyTrend[idx]
-                            val padD = 16.dp
-                            val n = state.monthlyTrend.size
-                            val stepXD = (maxWidth - padD * 2) / (n - 1).coerceAtLeast(1)
-                            val chartHD = 180.dp - padD * 2
-                            val xD = padD + stepXD * idx
-                            val yD = padD + chartHD * (1f - (p.amount / maxAmount).toFloat())
-                            val bx = (xD - 48.dp).coerceIn(0.dp, (maxWidth - 96.dp).coerceAtLeast(0.dp))
-                            val by = (yD - 46.dp).coerceAtLeast(0.dp)
-                            Surface(
-                                modifier = Modifier.offset(x = bx, y = by),
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.onSurface,
-                            ) {
-                                Text(
-                                    "${p.label} " + if (privacyMasked) PRIVACY_MASK else formatYuan(p.amount),
-                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.surface,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                )
-                            }
-                        }
-                    }
-                }
-                // X 月份标签
+                    },
+                )
+                // X 月份标签：当前月（最后一月）用 primary 色高亮，对齐参考图
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    state.monthlyTrend.forEach { p ->
+                    state.monthlyTrend.forEachIndexed { i, p ->
                         Text(
                             p.label,
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.Bold,
                             ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (i == state.monthlyTrend.lastIndex) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
                     }
                 }
@@ -1147,43 +1052,174 @@ private fun TrendCard(state: AnalysisUiState, privacyMasked: Boolean) {
     }
 }
 
+// 双趋势图共用绘制体（Step 50 抽取）：直线段折线 + 面积渐变 + 数据点 + 点击 tooltip。
+// 纵轴按 lo/hi 区间归一化（lo 可为负，容纳件数净变动的负值）；调用方保证 values 非空且不全 <= 0。
 @Composable
-private fun LegendDot(color: Color, label: String, line: Boolean) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        if (line) {
-            Box(
-                modifier = Modifier
-                    .width(12.dp)
-                    .height(2.dp)
-                    .background(color)
+private fun TrendLineChart(values: List<Double>, tooltipText: (Int) -> String) {
+    val chartPrimary = MaterialTheme.colorScheme.primary
+    val pointInner = MaterialTheme.colorScheme.surfaceContainerLowest
+    val lo = minOf(0.0, values.minOf { it })
+    val hi = maxOf(values.maxOf { it }, lo + 1.0)
+    var selectedIdx by remember { mutableStateOf<Int?>(null) }
+
+    BoxWithConstraints {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+                .pointerInput(values) {
+                    detectTapGestures { pos ->
+                        val n = values.size
+                        if (n < 2) return@detectTapGestures
+                        val padPx = 16.dp.toPx()
+                        val stepPx = ((size.width - padPx * 2) / (n - 1)).coerceAtLeast(1f)
+                        val idx = ((pos.x - padPx) / stepPx).roundToInt().coerceIn(0, n - 1)
+                        selectedIdx = if (selectedIdx == idx) null else idx
+                    }
+                },
+        ) {
+            val w = size.width
+            val h = size.height
+            val pad = 16.dp.toPx()
+            val stepX = (w - pad * 2) / (values.size - 1).coerceAtLeast(1)
+            val chartH = h - pad * 2
+            // 归一化：数值 → y 像素坐标（与下方 tooltip 的 dp 公式同源）
+            fun yOf(v: Double): Float {
+                val ratio = ((v - lo) / (hi - lo)).toFloat()
+                return pad + chartH * (1f - ratio)
+            }
+            // 折线路径 + 面积路径
+            val path = Path()
+            val fillPath = Path()
+            values.forEachIndexed { i, v ->
+                val x = pad + stepX * i
+                val y = yOf(v)
+                if (i == 0) {
+                    path.moveTo(x, y)
+                    fillPath.moveTo(x, h - pad)
+                    fillPath.lineTo(x, y)
+                } else {
+                    path.lineTo(x, y)
+                    fillPath.lineTo(x, y)
+                }
+                if (i == values.lastIndex) {
+                    fillPath.lineTo(x, h - pad)
+                }
+            }
+            fillPath.close()
+            // 面积渐变（上深下透明）
+            drawPath(
+                path = fillPath,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        chartPrimary.copy(alpha = 0.3f),
+                        chartPrimary.copy(alpha = 0f),
+                    ),
+                    startY = pad,
+                    endY = h - pad,
+                ),
             )
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(color)
+            // 折线 stroke
+            drawPath(
+                path = path,
+                color = chartPrimary,
+                style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
             )
+            // 数据点（橙点 + 白芯）
+            values.forEachIndexed { i, v ->
+                drawCircle(chartPrimary, radius = 4.dp.toPx(), center = Offset(pad + stepX * i, yOf(v)))
+                drawCircle(pointInner, radius = 1.5.dp.toPx(), center = Offset(pad + stepX * i, yOf(v)))
+            }
         }
-        Spacer(modifier = Modifier.width(4.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-            ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        // tooltip 气泡：dp 坐标与 Canvas 绘制公式同源；96dp 定宽防文本抖动
+        selectedIdx?.let { idx ->
+            if (idx in values.indices) {
+                val padD = 16.dp
+                val n = values.size
+                val stepXD = (maxWidth - padD * 2) / (n - 1).coerceAtLeast(1)
+                val chartHD = 180.dp - padD * 2
+                val ratio = ((values[idx] - lo) / (hi - lo)).toFloat()
+                val yD = padD + chartHD * (1f - ratio)
+                val xD = padD + stepXD * idx
+                val bx = (xD - 48.dp).coerceIn(0.dp, (maxWidth - 96.dp).coerceAtLeast(0.dp))
+                val by = (yD - 46.dp).coerceAtLeast(0.dp)
+                Surface(
+                    modifier = Modifier.offset(x = bx, y = by),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.onSurface,
+                ) {
+                    Text(
+                        tooltipText(idx),
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.surface,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    )
+                }
+            }
+        }
     }
 }
 
-// 环比徽章（Step 35 修订）：置于趋势卡标题右上角。
+// 右上角指标切换钮（Step 50）：单一容器内嵌两段的分段控件。
+// 当前几何（与标题墨高对齐，用户指令）：标题 20sp 中文字形实际高约 17dp，容器缩到同高——
+// 容器 17dp（圆角 6dp，内边距 1dp，段间 3dp），白 pill 15dp（内边距 h9/v2，圆角 4dp），文字 10sp。
+// 用 Box + clickable（indication = null）而非 Surface(onClick)：后者强制 48dp 最小触控目标，
+// 会撑爆小尺寸分段控件（此前尺寸失真的根因）。
+@Composable
+private fun TrendMetricToggle(selected: Int, onSelect: (Int) -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    ) {
+        Row(
+            modifier = Modifier.padding(1.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            listOf("支出额", "件数").forEachIndexed { i, label ->
+                val isSel = selected == i
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(
+                            if (isSel) {
+                                MaterialTheme.colorScheme.surfaceContainerLowest
+                            } else {
+                                Color.Transparent
+                            }
+                        )
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onSelect(i) }
+                        .padding(horizontal = 9.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontSize = 10.sp,
+                            lineHeight = 11.sp,
+                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                        ),
+                        color = if (isSel) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+// 环比徽章（Step 50 修订）：从趋势卡标题右上角移到标题下方；数据口径改由调用方传入
+// （金额页传支出序列，件数页传净变动序列），徽章始终描述当前可见图表。
 // 涨=红（支出上升是坏信号）/ 降=绿 / ±0.5% 内持平灰；同色 10% 底 pill + 箭头（形状编码）+ ±%（文字编码），
 // 不单靠颜色区分（无障碍要求，对齐逻辑设计文档 §5）。
 @Composable
-private fun MomBadge(trend: List<TrendPoint>) {
-    val prevAmount = trend.dropLast(1).lastOrNull()?.amount ?: 0.0
-    val lastAmount = trend.lastOrNull()?.amount ?: 0.0
+private fun MomBadge(values: List<Double>) {
+    val prevAmount = values.dropLast(1).lastOrNull() ?: 0.0
+    val lastAmount = values.lastOrNull() ?: 0.0
     if (prevAmount <= 0.0) return
     val momPct = (lastAmount - prevAmount) / prevAmount * 100.0
     val flat = momPct >= -0.5 && momPct <= 0.5
