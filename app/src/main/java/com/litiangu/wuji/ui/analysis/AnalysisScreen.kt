@@ -25,6 +25,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+// 注意：Modifier.weight 是 RowScope/ColumnScope 扩展，在 Row/Column 内容里直接用，
+// 不要 import androidx.compose.foundation.layout.weight，会撞上同名的 internal 属性（Step 51 教训）。
+// 另：IntrinsicSize 也无需 import；Step 51 改用固定高度后已无引用。
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -76,9 +79,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow   // Step 51：窄卡金额超长省略
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit   // Step 51：金额自适应字号
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.domain.DIMENSION_WEIGHTS
 import com.litiangu.wuji.ui.designsystem.categoryDotColor
@@ -242,6 +247,9 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
 @Composable
 private fun AnalysisCardBox(
     modifier: Modifier = Modifier,
+    // Step 51：卡内 padding 可配。默认 24dp 保持不变；资产结构双卡用 14dp，
+    // 因为每张卡只有屏幕宽的一半，留 24dp 边距会挤掉金额显示空间。
+    contentPadding: Dp = 24.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
@@ -257,21 +265,23 @@ private fun AnalysisCardBox(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        Column(modifier = Modifier.padding(24.dp)) { content() }   // 设计稿卡内 padding 24dp
+        Column(modifier = Modifier.padding(contentPadding)) { content() }   // 设计稿卡内 padding 24dp
     }
 }
 
-// 卡内小标签：label-caps 风格（DESIGN.md）
+// 双卡标题小字：与 B1 设计稿对齐（净持有 / 已回流资金，13px 常规浅灰层级）。
+// 走 labelMedium(12sp) + 常规字重 + onSurfaceVariant，去掉 label-caps 的大写间距感。
+// onSurfaceVariant 双主题安全（浅色近似 #999999 层级），不硬编码灰色以兼容深色模式。
 @Composable
 private fun AnalysisSectionLabel(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
         modifier = modifier,
-        style = MaterialTheme.typography.labelMedium.copy(
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.5.sp,
-        ),
+        style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
+        // Step 51：双卡场景下卡宽只有屏幕一半，标签必须单行，否则会换行撑高卡片。
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
     )
 }
 
@@ -614,105 +624,227 @@ private fun HonorPod(
     }
 }
 
-// ===== 资产结构卡：总投入 / 已变现 / 净持有（文档 §2.3 口径）+ 堆叠比例条 + 回收率（Step 36）=====
+// ===== 资产结构：左右双卡对称（Step 51）=====
+// 原为单卡纵向（标签行 + 三行数据 + 比例条 + 右上角回收率百分比）。
+// 两个问题驱动本次改造：
+//   1）「回收率 / 回收效率」话术把应用说成二手买卖记账；本应用是物品台账，
+//      变现只是物品生命周期结尾的一种处理方式，百分比做主指标会误导用户。
+//   2）百分比做主轴会带出「得分感」，本次改成「陈述事实」的金额表达。
+// 尺寸纪律：两卡合计宽 + 12dp 间距 = 现有单卡宽（屏幕宽 − 40dp 页面边距），
+// 因此双卡共用原来那张卡的宽度，左右边界与上下卡完全对齐，不会越出物理边界。
 @Composable
 private fun AssetsCard(state: AnalysisUiState, privacyMasked: Boolean) {
-    AnalysisCardBox {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            // 标签行 + 回收率（Step 36；Step 37 分色：<20% 灰 / 20~50% 黄 / >50% 绿——颜色不再说谎）
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                AnalysisSectionLabel("资产结构", modifier = Modifier.weight(1f))
-                if (state.totalInput > 0) {
-                    val recoveryPct = state.totalRecovery / state.totalInput * 100
-                    val recoveryColor = when {
-                        recoveryPct >= 50 -> GradeExcellentLight
-                        recoveryPct >= 20 -> GradeFairLight
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                    Text(
-                        "回收率 ${recoveryPct.roundToInt()}%",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = recoveryColor,
-                    )
-                }
-            }
-            AssetRow(
+    // 定高 170dp 强制双卡有充足的纵向留白，对齐 B1 设计稿「hero 浮在空旷卡里」的视觉。
+    // 此前用 IntrinsicSize.Max 让高度跟随内容，结果 4 行卡（净持有）与 5 行卡（回流）
+    // 自然高差太小，SpaceBetween 没空隙可分，挤成一条线；改固定高度后两边都通风。
+    // 170dp 推导：内容上下边距各 14dp + 5 行内容（label 16 + hero 32 + sub 20 + bar 6 + footnote 16 = 90） + 4 段 12dp 间距（48）= 180。
+    // 取 170dp 与 4 行卡对应同样的「4 段间距」，整体节奏感一致，hero 与 bar 间距与设计稿 1:1 比例对应。
+    Row(
+        modifier = Modifier.height(170.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        AssetNetHoldingCard(
+            state = state,
+            privacyMasked = privacyMasked,
+            modifier = Modifier.weight(1f),
+        )
+        AssetReflowCard(
+            state = state,
+            privacyMasked = privacyMasked,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+// 左卡：现状。回答「手里还压着多少钱」。
+// 顺序：标签 → 金额 hero（橙色主指标）→ 总投入脚注一行 → 结构比例条（总投入 = 100%）。
+@Composable
+private fun AssetNetHoldingCard(
+    state: AnalysisUiState,
+    privacyMasked: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    // 已变现占「总投入」的比例，用于比例条分段；总投入为 0 时没有比例可言，直接不画条。
+    val recoveryFrac = if (state.totalInput > 0) {
+        (state.totalRecovery / state.totalInput).toFloat().coerceIn(0f, 1f)
+    } else {
+        null
+    }
+    AssetMiniCard(modifier = modifier) {
+        AnalysisSectionLabel("净持有")
+        AssetMiniHero(
+            value = if (privacyMasked) PRIVACY_MASK else formatYuan(state.netHolding),
+            color = MaterialTheme.colorScheme.primary,
+        )
+        // 标签与金额同一行：窄卡空间有限，标签用短词「总投入」，避免换行。
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
                 "总投入",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
                 if (privacyMasked) PRIVACY_MASK else formatYuan(state.totalInput),
-                emphasized = false,
-                dotColor = null,
+                // 13sp 与设计稿 13px 脚注金额对齐（headline 之外的次级数据）。
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
             )
-            AssetRow(
-                "已变现",
-                if (privacyMasked) PRIVACY_MASK else formatYuan(state.totalRecovery),
-                emphasized = false,
-                dotColor = GradeExcellentLight,
+        }
+        if (recoveryFrac != null) {
+            // 结构语义：绿段 = 已变现，橙段 = 净持有，两段相加恰好是总投入。
+            AssetRatioBar(
+                leadingFraction = recoveryFrac,
+                leadingColor = GradeExcellentLight,
+                trackColor = MaterialTheme.colorScheme.primary,
+                restColor = MaterialTheme.colorScheme.primary,
             )
-            AssetRow(
-                "净持有",
-                if (privacyMasked) PRIVACY_MASK else formatYuan(state.netHolding),
-                emphasized = true,
-                dotColor = MaterialTheme.colorScheme.primary,
-            )
-            // 堆叠比例条（Step 36）：总投入=100%，绿段=已变现 + 橙段=净持有；与上行色点对应
-            if (state.totalInput > 0) {
-                val recoveryFrac = (state.totalRecovery / state.totalInput).toFloat().coerceIn(0f, 1f)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainerLow),
-                ) {
-                    if (recoveryFrac > 0f) {
-                        Box(
-                            modifier = Modifier
-                                .weight(recoveryFrac)
-                                .fillMaxHeight()
-                                .background(GradeExcellentLight)
-                        )
-                    }
-                    if (recoveryFrac < 1f) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f - recoveryFrac)
-                                .fillMaxHeight()
-                                .background(MaterialTheme.colorScheme.primary)
-                        )
-                    }
-                }
-            }
         }
     }
 }
 
+// 右卡：回流。回答「已经回到钱包里多少钱」。
+// hero 是金额而不是百分比，百分比降级为副文案「占在持投入 X%」。
+// 金额用中性色 onSurface（不用绿色），避免颜色暗示「这就更好」。
 @Composable
-private fun AssetRow(label: String, value: String, emphasized: Boolean, dotColor: Color? = null) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        if (dotColor != null) {
+private fun AssetReflowCard(
+    state: AnalysisUiState,
+    privacyMasked: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    // 总投入为 0 时无法算比例：百分比文案与进度条都不显示，卡内自然少一行。
+    val recoveryPct = if (state.totalInput > 0) {
+        (state.totalRecovery / state.totalInput * 100).roundToInt()
+    } else {
+        null
+    }
+    AssetMiniCard(modifier = modifier) {
+        AnalysisSectionLabel("已回流资金")
+        AssetMiniHero(
+            value = if (privacyMasked) PRIVACY_MASK else formatYuan(state.totalRecovery),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        if (recoveryPct != null) {
+            Text(
+                "占在持投入 $recoveryPct%",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (recoveryPct != null) {
+            // 进度条语义：灰底 = 总投入，绿段 = 已回流部分，不传 restColor。
+            // 轨道色用与设计稿 1:1 的 #F1EFE8（中性浅灰），不要用 surfaceContainerLow：
+            // 浅色主题下后者太接近白底，比例感丢失，用户看不到 23% 之外的部分。
+            AssetRatioBar(
+                leadingFraction = (state.totalRecovery / state.totalInput).toFloat().coerceIn(0f, 1f),
+                leadingColor = GradeExcellentLight,
+                trackColor = Color(0xFFF1EFE8),
+            )
+        }
+        // 底部说明：交代这笔回流资金来自几件已流转物品，让「钱回来了」落到实物语境。
+        // 字号用 labelSmall (11sp) 而非 labelMedium (12sp)：实测设备上 labelMedium 渲染偏大，
+        // 比同尺寸的标题/副文案显眼得多；缩一档后与卡片上方文字形成清晰的「主体-脚注」层级。
+        // recoveryItemCount == 0 时不显示（避免「来自 0 件」的怪文案）。
+        if (state.recoveryItemCount > 0) {
+            Text(
+                "来自 ${state.recoveryItemCount} 件已流转物品",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+// 双卡共同外壳：14dp 内边距 + 等高。verticalArrangement 用固定 13dp 节拍而非 SpaceBetween：
+// 4 行卡（净持有）与 5 行卡（回流）共用此布局，若用 SpaceBetween 会按各自内容撑高再分间隙，
+// 导致两卡的「比例条」分别落在不同 y 位置，视觉上不水平对齐；改为等距节拍后两卡按相同行高排列，
+// 比例条严格对齐。节拍 13dp 推导：5 行内容总高 90dp + 4×13dp 间隙 = 142dp = 170dp − 28dp padding，
+// 恰好填满，4 行卡底部留白由默认 Column top-aligned 处理。
+@Composable
+private fun AssetMiniCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    AnalysisCardBox(modifier = modifier.fillMaxHeight(), contentPadding = 14.dp) {
+        Column(
+            modifier = Modifier.fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(13.dp),
+        ) { content() }
+    }
+}
+
+// hero 金额：常规金额直接上 26sp（设计稿 display 层级），超长金额才逐档降字号。
+// 降档阈值按 Manrope 数字字宽 ≈ 0.56em 推算，保证 360dp 机型（卡内可用 126dp）不溢出；
+// 万一仍超长由 maxLines+Ellipsis 兜底。
+@Composable
+private fun AssetMiniHero(value: String, color: Color) {
+    Text(
+        value,
+        style = MaterialTheme.typography.headlineSmall.copy(
+            fontSize = assetAmountSize(value),
+            fontWeight = FontWeight.Bold,
+        ),
+        color = color,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+private fun assetAmountSize(text: String): TextUnit = when {
+    text.length >= 13 -> 16.sp
+    text.length >= 11 -> 18.sp
+    text.length >= 9 -> 22.sp
+    else -> 26.sp
+}
+
+// 一条横向比例条。
+// restColor 为空 → 剩余部分透明露出 trackColor（进度条语义，右卡用）；
+// restColor 非空 → 剩余部分被填满（结构语义，左卡用，绿+橙合计即 100%）。
+//
+// 注意：Modifier.weight(f) 是「按 f/总权重 占比分配」，不是「占宽度 f%」。
+// 若进度条里只有一个 weight(f) 子项（如右卡只有绿色段），总权重 = f，它会拿到
+// f/f = 100% 宽度，整条全绿（第三轮 bug 根因）。因此剩余部分必须始终放一个占位子项
+// 把权重补到 1：占位项背景用 restColor 填满，或用 Color.Transparent 让轨道色透出。
+@Composable
+private fun AssetRatioBar(
+    leadingFraction: Float,
+    leadingColor: Color,
+    trackColor: Color,
+    restColor: Color? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(trackColor),
+    ) {
+        if (leadingFraction > 0f) {
             Box(
                 modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(dotColor)
+                    .weight(leadingFraction)
+                    .fillMaxHeight()
+                    .background(leadingColor)
             )
-            Spacer(modifier = Modifier.width(8.dp))
         }
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            value,
-            style = MaterialTheme.typography.headlineSmall.copy(
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-            ),
-            color = if (emphasized) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-        )
+        if (leadingFraction < 1f) {
+            Box(
+                modifier = Modifier
+                    .weight(1f - leadingFraction)
+                    .fillMaxHeight()
+                    .background(restColor ?: Color.Transparent)
+            )
+        }
     }
 }
 
@@ -1480,8 +1612,18 @@ private fun BudgetCard(state: AnalysisUiState, privacyMasked: Boolean = false) {
 }
 
 // ===== 工具函数 =====
-private fun formatYuan(value: Double): String =
-    if (value % 1.0 == 0.0) "¥${value.toLong()}" else "¥%.1f".format(value)
+// 金额格式化：千分位分隔，最多 1 位小数（与设计稿 ¥9,481.6 对齐；整数则去掉 .0）。
+// 旧实现「%.1f」只强制 1 位，新 DecimalFormat "#,##0.##" 会保留全部小数位导致「¥9,481.64」
+// 过长；这里按旧行为：纯整数显整数，有小数最多 1 位并按 HALF_UP 四舍五入。
+// DecimalFormat 受当前 Locale 影响，Android 默认 zh_CN 用半角逗号，符合用户视觉习惯。
+private fun formatYuan(value: Double): String {
+    val sign = if (value < 0) "-" else ""
+    val abs = kotlin.math.abs(value)
+    val pattern = if (abs % 1.0 == 0.0) "#,##0" else "#,##0.#"
+    val df = java.text.DecimalFormat(pattern)
+    df.roundingMode = java.math.RoundingMode.HALF_UP
+    return "${sign}¥${df.format(abs)}"
+}
 
 // 解析 HealthGrade.colorHex（"#34C759"）为 Color；解析失败回退绿色
 private fun parseHexColor(hex: String): Color = try {

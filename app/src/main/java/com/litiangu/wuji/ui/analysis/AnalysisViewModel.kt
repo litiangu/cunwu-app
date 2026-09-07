@@ -67,6 +67,10 @@ data class AnalysisUiState(
     val totalInput: Double = 0.0,           // 净持有口径：未售出 购入+附加
     val totalRecovery: Double = 0.0,        // 已变现：全部 二手收益
     val netHolding: Double = 0.0,           // 净持有 = 未售出投入 − 全部变现
+    // Step 51：有「二手变现」收益的物品件数（resaleValue > 0）。
+    // 不限 status：用户可在未售出物品上挂收益子项（ItemEditViewModel MoneyItem），
+    // 此时 totalRecovery > 0 但 SOLD 件数 = 0；脚注仍应展示，否则右卡显得「有钱没来历」。
+    val recoveryItemCount: Int = 0,
     val categoryBars: List<CategoryBarData> = emptyList(),
     val monthlyTrend: List<TrendPoint> = emptyList(),
     // ===== Step 21 预算遵从信号（独立，不进健康分）=====
@@ -137,6 +141,7 @@ internal fun buildAnalysisUiState(
         totalInput = totalInput,
         totalRecovery = totalRecovery,
         netHolding = totalInput - totalRecovery,
+        recoveryItemCount = items.count { it.resaleValue > 0 },
         categoryBars = bars,
         monthlyTrend = buildMonthlyTrend(items),
         monthlyBudget = monthlyBudget,
