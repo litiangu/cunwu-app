@@ -58,6 +58,12 @@ object SmartCutoutEngine {
     /** 掩码被清除的比例上限，超过即判定误吞主体（白叠白极端场景），整体回滚 */
     private const val BG_MAX_REMOVE_RATIO = 0.55f
 
+    // ── [修复10] 边缘硬边化参数（P3）──
+    /** 上采样回原尺寸后二次二值化的等值线（0-255）。128 = 50%，几何上最接近原二值轮廓 */
+    private const val REBINARY_THRESHOLD = 128
+    /** 掩码边缘内缩轮数（模型 1024 分辨率，1 轮 = 原图 1 个模型像素）：削掉最外一圈主体/背景混色像素 */
+    private const val EDGE_SHRINK_ITER = 1
+
     // ── [修复09] 洪泛填洞参数（P2）──
     /** 可填补的洞面积上限占前景面积的比例；大镂空（甜甜圈孔、车架三角、轮辐楔形区）保持透明 */
     private const val HOLE_MAX_AREA_RATIO = 0.005f
@@ -67,6 +73,30 @@ object SmartCutoutEngine {
      * 没有这个上限时，bike 轮辐间的独立楔形区（单块约 1-3k px）会被逐块误填，桃色背景透出。
      */
     private const val HOLE_MAX_AREA_ABS = 1024
+
+    // ── [修复10-追加·v2] 看穿区种子生长清理参数 ──
+    /**
+     * 种子资格：封闭透明连通域的最小面积（模型 1024 分辨率）。
+     * 只有「模型确认为背景且被主体包围」的透明区（bike 已透明的轮辐间隙）才有资格当种子。
+     */
+    private const val POCKET_SEED_MIN_AREA = 128
+    /**
+     * 种子资格：种子中位色与背景基准色的最大距离。
+     * 排除「被误透明的主体内部暗隙」（颜色与背景差得远）充当种子。
+     */
+    private const val POCKET_SEED_MAX_DIST = 48
+    /**
+     * 锚定容差：候选像素与最近种子中位色的最大距离。
+     * 实测 bike：楔形区 80% 像素距种子中位色 ≤12；车架暖色高光距 ~14，被该阈值挡住（这是纯颜色方案下
+     * 两者的真实分界，再放宽就会吃掉车架高光）。
+     */
+    private const val POCKET_ANCHOR_TOL = 12
+    /** 链式生长的局部步进容差：候选像素与当前像素的最大通道差，用于沿背景渐变爬坡（轮底比种子处颜色更深） */
+    private const val POCKET_CHAIN_LOCAL_DELTA = 4
+    /** 链式生长的硬上限：无论爬多远，与种子中位色距离不得超过此值，防漂移进同色的车架高光 */
+    private const val POCKET_CHAIN_MAX_DIST = 28
+    /** 护栏：累计清除像素超过前景面积此比例时整体回滚（种子误判时的最后防线） */
+    private const val POCKET_MAX_CLEAR_RATIO = 0.30f
 
     // ── 贴纸效果参数 ──
     /** 白边宽度（dp）：参考 sticker-forge 的 outline 粗细 */
@@ -187,9 +217,9 @@ object SmartCutoutEngine {
      * 1. min-max 归一化到 [0,1]
      * 2. 硬边化：v <= 0.10 → 0, v > 0.10 → 255（无过渡带）
      * 3. 开运算去孤立噪点 → [修复09] 均匀背景先验清边 → 洪泛填洞
-     * 4. 保留最大连通域，清除背景误识别孤岛
+     * 4. 保留最大连通域 → [修复10] 边缘内缩一圈（削掉混色抗锯齿像素），清除背景误识别孤岛
      * 5. 仅缩放 alpha 掩码回原图尺寸
-     * 6. 用原图全分辨率 RGB 合成（避免原图被二次缩放失色）
+     * 6. 用原图全分辨率 RGB 合成 + [修复10] 二次二值化（消除上采样渐变带导致的向内渗白）
      */
     private fun postprocessAlpha(
         rawAlpha: FloatArray,
@@ -226,13 +256,33 @@ object SmartCutoutEngine {
         val fitRatio = minOf(modelW.toFloat() / origW, modelH.toFloat() / origH)
         val fitLeft = (modelW - (origW * fitRatio).toInt()) / 2
         val fitTop = (modelH - (origH * fitRatio).toInt()) / 2
-        removeBackgroundBleed(normAlpha, modelW, modelH, src, fitRatio, fitLeft, fitTop)
+        val bgRef = detectBackgroundReference(src)
+        if (bgRef != null) {
+            removeBackgroundBleed(normAlpha, modelW, modelH, src, fitRatio, fitLeft, fitTop, bgRef)
 
-        // 3.6 [修复09-P2] 洪泛填洞：主体内部封闭的透明区补为前景，对轮廓外形零改变
-        fillHoles(normAlpha, modelW, modelH)
+            // 3.5.5 [修复10-追加·v2] 看穿区种子生长清理：
+            // 分割模型对被主体包围的同色区（bike 轮辐间隙）判定不稳定，部分透明部分原色；
+            // 以已透明的封闭间隙为种子（确凿背景），按「锚定色距 + 链式爬坡」生长清透明。
+            // v1 的全局色距分域因背景渐变失效（楔形区距基准色 20+，容差 16 收不进），已替换。
+            val mcBitmap = Bitmap.createScaledBitmap(src, modelW, modelH, true)
+            val modelColors = IntArray(totalPixels)
+            mcBitmap.getPixels(modelColors, 0, modelW, 0, 0, modelW, modelH)
+            if (mcBitmap !== src) mcBitmap.recycle()
+            clearEnclosedBackgroundPockets(normAlpha, modelW, modelH, modelColors, bgRef)
+
+            // 3.6 [修复09-P2] 洪泛填洞（颜色豁免版）：主体内部封闭的「非背景色」透明区补为前景
+            fillHoles(normAlpha, modelW, modelH, modelColors, bgRef)
+        } else {
+            // 3.6 [修复09-P2] 背景不均匀（复杂实拍场景）时退化为纯面积判定
+            fillHoles(normAlpha, modelW, modelH, null, null)
+        }
 
         // 4. 只保留最大连通域，去掉背景误识别的小孤岛（如自行车顶部多余块）
         keepLargestConnectedComponent(normAlpha, modelW, modelH)
+
+        // 4.5 [修复10-P3-B] 边缘内缩一圈（十字核，模型分辨率）：
+        // 削掉最外一层「主体/背景混色」的抗锯齿像素，使顶层前景不带浅色镶边，白边落在真实背景一侧
+        morphologicalErodeCross(normAlpha, modelW, modelH)
 
         // 5. 把 model 尺寸 alpha 掩码转成 Bitmap，只保留 A 通道（RGB 占位）
         val alphaPixels = IntArray(totalPixels)
@@ -259,10 +309,13 @@ object SmartCutoutEngine {
         val scaledAlphaPixels = IntArray(origW * origH)
         fullAlpha.getPixels(scaledAlphaPixels, 0, origW, 0, 0, origW, origH)
 
-        // 8. 用原始 RGB 合成最终透明前景（避免原图被缩放到 1024 再放大导致的柔化/失色）
+        // 8. 用原始 RGB 合成最终透明前景（避免原图被缩放到 1024 再放大导致的柔化/失色）。
+        // [修复10-P3-A] 二次二值化：双线性上采样把二值掩码磨成渐变带，半透明环会让下方白边透出形成「向内渗白」，
+        // 这里按 50% 等值线恢复硬边（阈值常量 REBINARY_THRESHOLD）
         val resultPixels = IntArray(origW * origH)
         for (i in resultPixels.indices) {
-            val a = (scaledAlphaPixels[i] ushr 24) and 0xFF
+            val raw = (scaledAlphaPixels[i] ushr 24) and 0xFF
+            val a = if (raw >= REBINARY_THRESHOLD) 0xFF else 0
             resultPixels[i] = (a shl 24) or (origPixels[i] and 0x00FFFFFF)
         }
         val result = Bitmap.createBitmap(resultPixels, origW, origH, Bitmap.Config.ARGB_8888)
@@ -340,6 +393,39 @@ object SmartCutoutEngine {
         }
     }
 
+    /**
+     * [修复10-P3-B] 十字核腐蚀（4 邻域取最小）。
+     *
+     * 目的：削掉掩码最外一圈「主体与背景混色」的抗锯齿像素。这些像素在硬边化后成为紧贴白边内侧的浅色镶边，
+     * 视觉上等于白边向内增粗；内缩一圈后白边落在真实背景一侧，向内渗白消失。
+     *
+     * 代价：轮廓整体内缩 `rounds` 个模型像素（1024 分辨率，1px ≈ 0.1% 尺寸，肉眼不可见）；
+     * 1px 宽的细结构会被整条抹掉（与旧「四轮闭运算」的等效行为一致）。
+     */
+    private fun morphologicalErodeCross(alpha: ByteArray, w: Int, h: Int, rounds: Int = EDGE_SHRINK_ITER) {
+        var current = alpha
+        repeat(rounds) {
+            val next = ByteArray(current.size)
+            for (y in 1 until h - 1) {
+                for (x in 1 until w - 1) {
+                    val idx = y * w + x
+                    var minVal = current[idx].toInt() and 0xFF
+                    val up = current[idx - w].toInt() and 0xFF
+                    val down = current[idx + w].toInt() and 0xFF
+                    val left = current[idx - 1].toInt() and 0xFF
+                    val right = current[idx + 1].toInt() and 0xFF
+                    if (up < minVal) minVal = up
+                    if (down < minVal) minVal = down
+                    if (left < minVal) minVal = left
+                    if (right < minVal) minVal = right
+                    next[idx] = minVal.toByte()
+                }
+            }
+            current = next
+        }
+        if (current !== alpha) current.copyInto(alpha)
+    }
+
     /** 只保留最大连通域，清除所有小孤岛（背景误识别或前景碎片） */
     private fun keepLargestConnectedComponent(alpha: ByteArray, w: Int, h: Int) {
         val visited = BooleanArray(alpha.size)
@@ -408,20 +494,13 @@ object SmartCutoutEngine {
     // ══════════════════════════════════════════════════════════
 
     /**
-     * [修复09-P0] 清掉掩码中「与背景同色且连通到图像边界」的像素。
+     * [修复09-P0/修复10-追加] 判定原图是否为均匀背景，并取背景基准色。
      *
-     * 针对浅色主体 + 纯白底商品图：模型会在真实轮廓外输出一圈低置信 alpha，二值化后成为轮廓外的背景带，
-     * 经形态学与白边膨胀放大，即用户看到的白色凸块（weighing machine 右下凸出）。
+     * 流程：缩到工作分辨率 → 边框带采样 → 通道中位数作基准色（比均值更抗「主体入框」干扰）→ 均匀性判定。
      *
-     * 流程：缩到工作分辨率 → 边框采样取通道中位数作背景基准色 → 均匀性判定 → 从四边洪泛确定背景区
-     *       → 掩码像素反 letterbox 回原图坐标，命中背景区即清零 → 误伤护栏（清除过多整体回滚）。
-     *
-     * @return true 表示已清除并保留；false 表示跳过（背景不均匀）或已回滚（护栏触发）
+     * @return 0xFFRRGGBB 背景基准色；null 表示背景不均匀（复杂实拍场景），调用方跳过全部背景色相关处理
      */
-    private fun removeBackgroundBleed(
-        alpha: ByteArray, w: Int, h: Int,
-        src: Bitmap, fitRatio: Float, fitLeft: Int, fitTop: Int
-    ): Boolean {
+    private fun detectBackgroundReference(src: Bitmap): Int? {
         val origW = src.width
         val origH = src.height
 
@@ -454,26 +533,67 @@ object SmartCutoutEngine {
                 }
             }
         }
-        if (sampleCount < 64) return false
+        if (sampleCount < 64) return null
         val medR = medianOfChannel(samples, sampleCount, 16)
         val medG = medianOfChannel(samples, sampleCount, 8)
         val medB = medianOfChannel(samples, sampleCount, 0)
 
-        // 3. 均匀性判定：边框像素落在容差内的比例不足即视为背景不均匀，整体跳过
+        // 3. 均匀性判定：边框像素落在容差内的比例不足即视为背景不均匀
         var inTolerance = 0
         for (i in 0 until sampleCount) {
             if (colorDistance(samples[i], medR, medG, medB) <= BG_COLOR_TOLERANCE) inTolerance++
         }
-        if (inTolerance.toFloat() / sampleCount < BG_UNIFORM_RATIO) return false
+        if (inTolerance.toFloat() / sampleCount < BG_UNIFORM_RATIO) return null
+        return (0xFF shl 24) or (medR shl 16) or (medG shl 8) or medB
+    }
 
-        // 4. 从四边 4 邻域洪泛出「确定背景区」（颜色不在容差内即止步，主体不会被穿越）
+    /**
+     * [修复09-P0] 清掉掩码中「与背景同色且连通到图像边界」的像素。
+     *
+     * 针对浅色主体 + 纯白底商品图：模型会在真实轮廓外输出一圈低置信 alpha，二值化后成为轮廓外的背景带，
+     * 经形态学与白边膨胀放大，即用户看到的白色凸块（weighing machine 右下凸出）。
+     *
+     * 流程：从四边洪泛确定背景区 → 掩码像素反 letterbox 回原图坐标，命中背景区即清零
+     *       → 误伤护栏（清除过多整体回滚）。
+     *
+     * @param bgRef 背景基准色（[detectBackgroundReference] 返回非 null 时才调用本函数）
+     * @return true 表示已清除并保留；false 表示已回滚（护栏触发）
+     */
+    private fun removeBackgroundBleed(
+        alpha: ByteArray, w: Int, h: Int,
+        src: Bitmap, fitRatio: Float, fitLeft: Int, fitTop: Int, bgRef: Int
+    ): Boolean {
+        val origW = src.width
+        val origH = src.height
+        val refR = (bgRef ushr 16) and 0xFF
+        val refG = (bgRef ushr 8) and 0xFF
+        val refB = bgRef and 0xFF
+
+        // 1. 工作分辨率：长边 ≤ BG_WORK_MAX_SIDE（控内存与耗时）
+        val workScale = minOf(
+            BG_WORK_MAX_SIDE.toFloat() / origW,
+            BG_WORK_MAX_SIDE.toFloat() / origH,
+            1f
+        )
+        val workW = (origW * workScale).toInt().coerceAtLeast(1)
+        val workH = (origH * workScale).toInt().coerceAtLeast(1)
+        val workPixels = IntArray(workW * workH)
+        if (workScale >= 1f) {
+            src.getPixels(workPixels, 0, workW, 0, 0, origW, origH)
+        } else {
+            val small = Bitmap.createScaledBitmap(src, workW, workH, true)
+            small.getPixels(workPixels, 0, workW, 0, 0, workW, workH)
+            small.recycle()
+        }
+
+        // 2. 从四边 4 邻域洪泛出「确定背景区」（颜色不在容差内即止步，主体不会被穿越）
         val bgMask = BooleanArray(workW * workH)
         val queue = IntArray(workW * workH)
         var head = 0
         var tail = 0
         fun seedBg(idx: Int) {
             if (bgMask[idx]) return
-            if (colorDistance(workPixels[idx], medR, medG, medB) > BG_COLOR_TOLERANCE) return
+            if (colorDistance(workPixels[idx], refR, refG, refB) > BG_COLOR_TOLERANCE) return
             bgMask[idx] = true
             queue[tail++] = idx
         }
@@ -555,8 +675,15 @@ object SmartCutoutEngine {
      * 流程：从四边对透明像素洪泛标记外部背景 → 未可达的透明像素即洞 → 逐连通域统计面积 →
      * 面积不超过阈值（前景面积 × HOLE_MAX_AREA_RATIO，clamp 到 64..HOLE_MAX_AREA_ABS）才填为前景。
      * 双重上限的意义：只补「针孔级」真洞，甜甜圈中孔、车架三角、轮辐楔形区等大尺度镂空保持透明。
+     *
+     * [修复10-追加] 颜色豁免：洞的像素中位色 ≈ 背景基准色时跳过填充。
+     * 这类洞是「看穿洞」（真实露出背景，如轮辐间隙），填充会把背景色焊成不透明色块；
+     * 真正该填的是主体内部的针孔（模型噪声），其像素颜色 ≈ 主体色，不受影响。
+     *
+     * @param colors 与掩码同尺寸的原图颜色数组（模型分辨率），为 null 时退化为纯面积判定
+     * @param bgRef 背景基准色，为 null 时退化为纯面积判定
      */
-    private fun fillHoles(alpha: ByteArray, w: Int, h: Int) {
+    private fun fillHoles(alpha: ByteArray, w: Int, h: Int, colors: IntArray?, bgRef: Int?) {
         val total = w * h
         var fgArea = 0
         for (i in 0 until total) if (alpha[i] != 0.toByte()) fgArea++
@@ -623,9 +750,190 @@ object SmartCutoutEngine {
                 }
             }
             if (cTail <= maxHole) {
+                // [修复10-追加] 颜色豁免：洞的中位色 ≈ 背景基准色 → 是「看穿洞」，不填
+                if (colors != null && bgRef != null) {
+                    val holeColors = IntArray(cTail)
+                    for (i in 0 until cTail) holeColors[i] = colors[comp[i]]
+                    val hr = medianOfChannel(holeColors, cTail, 16)
+                    val hg = medianOfChannel(holeColors, cTail, 8)
+                    val hb = medianOfChannel(holeColors, cTail, 0)
+                    val holeArgb = (0xFF shl 24) or (hr shl 16) or (hg shl 8) or hb
+                    val refR = (bgRef ushr 16) and 0xFF
+                    val refG = (bgRef ushr 8) and 0xFF
+                    val refB = bgRef and 0xFF
+                    // [修复10-追加·v2] 豁免容差对齐 POCKET_SEED_MAX_DIST(48)：口袋生长清掉的楔形碎块
+                    // 颜色比基准色深（实测距 bgRef 可达 45），用旧值 24 会被这里重新填回桃色
+                    if (colorDistance(holeArgb, refR, refG, refB) <= POCKET_SEED_MAX_DIST) continue
+                }
                 for (i in 0 until cTail) alpha[comp[i]] = 0xFF.toByte()
             }
         }
+    }
+
+    /**
+     * [修复10-追加·v2] 看穿区种子生长：清掉「与已确认看穿区同色延续」的误判前景。
+     *
+     * 场景：bike 轮辐间隙。分割模型对被主体包围的背景区判定不稳定，部分间隙透明、部分误判为前景
+     * （顶层绘制原图后桃色背景透出），视觉上「部分透明部分原色」。
+     *
+     * v1（按与背景基准色的全局色距分域）实测失败：背景存在空间渐变（bike 边框 ≈(230,210,199)，
+     * 轮内楔形区 ≈(241,192,166)，最大通道差达 20+），容差 16 收不进楔形区；放宽到 40 又会波及
+     * 体重秤浅色细节。且车架暖色高光（≈(234,199,181)）与楔形区色距仅 ~15，任何全局色距判定都无法区分。
+     *
+     * v2 思路：模型已正确透明的封闭间隙（看穿区）是「确凿的背景」，以其颜色为锚：
+     *  1. 找出所有封闭透明连通域，面积 ≥ [POCKET_SEED_MIN_AREA] 且中位色距基准色 ≤ [POCKET_SEED_MAX_DIST]
+     *    者为种子（bike = 已透明的轮辐间隙）；
+     *  2. 从种子多源 BFS 生长进相邻不透明像素，两条准入线（任一满足即清）：
+     *     a. 锚定：与最近种子中位色距离 ≤ [POCKET_ANCHOR_TOL]；
+     *     b. 链式：与当前像素色差 ≤ [POCKET_CHAIN_LOCAL_DELTA]（沿背景渐变爬坡），
+     *        且与最近种子中位色距离 ≤ [POCKET_CHAIN_MAX_DIST]（防漂移进同色的车架高光）；
+     *  3. 护栏：累计清除超过前景面积 × [POCKET_MAX_CLEAR_RATIO] 整体回滚。
+     *
+     * 体重秤：主体实心无封闭透明区 → 无种子 → 整段跳过，零风险。
+     * 车架高光保护：高光中位色距种子 ~14 > 锚定 12，且高光核心不满足链式准入，最多在交界处吃进 1-2px 抗锯齿边。
+     *
+     * @param colors 与掩码同尺寸的原图颜色数组（模型分辨率）
+     * @param bgRef 背景基准色（[detectBackgroundReference] 返回非 null 时才调用本函数）
+     */
+    private fun clearEnclosedBackgroundPockets(alpha: ByteArray, w: Int, h: Int, colors: IntArray, bgRef: Int) {
+        val total = w * h
+        val refR = (bgRef ushr 16) and 0xFF
+        val refG = (bgRef ushr 8) and 0xFF
+        val refB = bgRef and 0xFF
+
+        // 1. 从四边洪泛标记外部透明区，剩下的透明连通域即「封闭透明区」
+        val external = BooleanArray(total)
+        val queue = IntArray(total)
+        var head = 0
+        var tail = 0
+        fun pushExternal(idx: Int) {
+            if (external[idx] || alpha[idx] != 0.toByte()) return
+            external[idx] = true
+            queue[tail++] = idx
+        }
+        for (x in 0 until w) {
+            pushExternal(x); pushExternal((h - 1) * w + x)
+        }
+        for (y in 0 until h) {
+            pushExternal(y * w); pushExternal(y * w + w - 1)
+        }
+        while (head < tail) {
+            val idx = queue[head++]
+            val x = idx % w
+            val y = idx / w
+            if (x > 0) pushExternal(idx - 1)
+            if (x < w - 1) pushExternal(idx + 1)
+            if (y > 0) pushExternal(idx - w)
+            if (y < h - 1) pushExternal(idx + w)
+        }
+
+        // 2. 逐封闭透明域做种子资格检查（面积 + 中位色），合格者的中位色收进种子锚点集
+        val visited = BooleanArray(total)
+        val comp = IntArray(total)
+        val seedMedians = ArrayList<Int>()
+        for (start in 0 until total) {
+            if (visited[start] || external[start] || alpha[start] != 0.toByte()) continue
+            var cHead = 0
+            var cTail = 0
+            visited[start] = true
+            comp[cTail++] = start
+            while (cHead < cTail) {
+                val idx = comp[cHead++]
+                val x = idx % w
+                val y = idx / w
+                if (x > 0 && !visited[idx - 1] && !external[idx - 1] && alpha[idx - 1] == 0.toByte()) {
+                    visited[idx - 1] = true; comp[cTail++] = idx - 1
+                }
+                if (x < w - 1 && !visited[idx + 1] && !external[idx + 1] && alpha[idx + 1] == 0.toByte()) {
+                    visited[idx + 1] = true; comp[cTail++] = idx + 1
+                }
+                if (y > 0 && !visited[idx - w] && !external[idx - w] && alpha[idx - w] == 0.toByte()) {
+                    visited[idx - w] = true; comp[cTail++] = idx - w
+                }
+                if (y < h - 1 && !visited[idx + w] && !external[idx + w] && alpha[idx + w] == 0.toByte()) {
+                    visited[idx + w] = true; comp[cTail++] = idx + w
+                }
+            }
+            if (cTail < POCKET_SEED_MIN_AREA) continue
+            val domainColors = IntArray(cTail)
+            for (i in 0 until cTail) domainColors[i] = colors[comp[i]]
+            val mr = medianOfChannel(domainColors, cTail, 16)
+            val mg = medianOfChannel(domainColors, cTail, 8)
+            val mb = medianOfChannel(domainColors, cTail, 0)
+            if (maxOf(maxOf(Math.abs(mr - refR), Math.abs(mg - refG)), Math.abs(mb - refB)) <= POCKET_SEED_MAX_DIST) {
+                seedMedians.add((mr shl 16) or (mg shl 8) or mb)
+            }
+        }
+        if (seedMedians.isEmpty()) return
+
+        // 3. 多源 BFS 生长：种子像素本身入队，向相邻不透明像素扩张
+        val fgCountBefore = countForeground(alpha, total)
+        val cleared = BooleanArray(total)
+        val grow = IntArray(total)
+        var gHead = 0
+        var gTail = 0
+        for (start in 0 until total) {
+            if (alpha[start] == 0.toByte() && !external[start]) {
+                cleared[start] = true
+                grow[gTail++] = start
+            }
+        }
+        val medCount = seedMedians.size
+        while (gHead < gTail) {
+            val idx = grow[gHead++]
+            val c = colors[idx]
+            val cr = c ushr 16 and 0xFF
+            val cg = c ushr 8 and 0xFF
+            val cb = c and 0xFF
+            val x = idx % w
+            val y = idx / w
+            for (dir in 0 until 4) {
+                val n = when (dir) {
+                    0 -> if (x > 0) idx - 1 else -1
+                    1 -> if (x < w - 1) idx + 1 else -1
+                    2 -> if (y > 0) idx - w else -1
+                    else -> if (y < h - 1) idx + w else -1
+                }
+                if (n < 0 || cleared[n] || alpha[n] != 0xFF.toByte()) continue
+                val nc = colors[n]
+                // 与最近种子中位色的最大通道差
+                var best = Int.MAX_VALUE
+                for (m in 0 until medCount) {
+                    val sm = seedMedians[m]
+                    val d = maxOf(
+                        maxOf(Math.abs((nc ushr 16 and 0xFF) - (sm ushr 16 and 0xFF)), Math.abs((nc ushr 8 and 0xFF) - (sm ushr 8 and 0xFF))),
+                        Math.abs((nc and 0xFF) - (sm and 0xFF))
+                    )
+                    if (d < best) best = d
+                    if (best <= POCKET_ANCHOR_TOL) break
+                }
+                // 与当前像素的最大通道差（链式爬坡用）
+                val localD = maxOf(
+                    maxOf(Math.abs((nc ushr 16 and 0xFF) - cr), Math.abs((nc ushr 8 and 0xFF) - cg)),
+                    Math.abs((nc and 0xFF) - cb)
+                )
+                if (best <= POCKET_ANCHOR_TOL ||
+                    (best <= POCKET_CHAIN_MAX_DIST && localD <= POCKET_CHAIN_LOCAL_DELTA)
+                ) {
+                    cleared[n] = true
+                    grow[gTail++] = n
+                }
+            }
+        }
+
+        // 4. 护栏 + 落笔
+        var clearCount = 0
+        for (i in 0 until total) if (cleared[i] && alpha[i] != 0.toByte()) clearCount++
+        if (clearCount == 0) return
+        if (clearCount > fgCountBefore * POCKET_MAX_CLEAR_RATIO) return
+        for (i in 0 until total) if (cleared[i]) alpha[i] = 0
+    }
+
+    /** 统计前景像素数（alpha 非 0） */
+    private fun countForeground(alpha: ByteArray, total: Int): Int {
+        var n = 0
+        for (i in 0 until total) if (alpha[i] != 0.toByte()) n++
+        return n
     }
 
     // ══════════════════════════════════════════════════════════
@@ -636,7 +944,7 @@ object SmartCutoutEngine {
      * 对透明抠图应用贴纸效果：白色模切边 + 边缘投影阴影。
      *
      * v2 改进：
-     * - 白边：真形态学膨胀（3×3 圆形核，多轮迭代），边缘清晰
+     * - 白边：真形态学膨胀（[修复10] 八边形近似核：十字/对角交替，多轮迭代），边缘清晰且转角不鼓包
      * - 阴影：仅边缘带（dilatedAlpha − originalAlpha 的差集），非全区域
      * - 模糊：Stack Blur（O(n) 近似高斯），替代不可靠的 BlurMaskFilter
      *
@@ -753,21 +1061,31 @@ object SmartCutoutEngine {
     }
 
     /**
-     * 形态学膨胀：用圆形近似核（3×3 十字 + 四角）迭代多次。
+     * 形态学膨胀：八边形近似核（偶数轮十字 4 邻域，奇数轮对角 4 邻域）迭代多次。
      * radius 越大，膨胀越明显（白边越粗）。
+     *
+     * [修复10-P4] 原实现为 3×3 全方块核（Chebyshev 生长）：45° 边与转角处的外扩是直边的 1.41 倍，
+     * 圆弧与圆角处白边明显偏厚、转角鼓包。纯十字核（Manhattan）则反过来只有 0.71 倍。
+     * 两种核交替即经典的八边形结构元近似：直边与 45° 边的生长速率接近，白边厚度均匀。
+     *
+     * 中心像素自保留（`next` 初值取 `current`），保证膨胀结果恒为原掩码的超集。
      */
     private fun morphologicalDilate(alpha: ByteArray, w: Int, h: Int, radius: Int): ByteArray {
         var current = alpha
         // 每次迭代膨胀 1px，共 radius 次
         for (iter in 0 until radius) {
+            val useDiagonal = (iter % 2 == 1)
             val next = ByteArray(current.size)
             for (y in 1 until h - 1) {
                 for (x in 1 until w - 1) {
                     val idx = y * w + x
-                    var maxVal = 0
-                    // 3×3 邻域最大值（圆形核近似）
+                    var maxVal = current[idx].toInt() and 0xFF
                     for (dy in -1..1) {
                         for (dx in -1..1) {
+                            if (dx == 0 && dy == 0) continue
+                            // 十字核只取 4 邻域，对角核只取 4 个角，按迭代奇偶交替
+                            val isCross = (dx == 0 || dy == 0)
+                            if (useDiagonal == isCross) continue
                             val v = current[(y + dy) * w + (x + dx)].toInt() and 0xFF
                             if (v > maxVal) maxVal = v
                         }
