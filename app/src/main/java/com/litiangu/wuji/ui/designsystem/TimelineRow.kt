@@ -26,6 +26,7 @@ import com.litiangu.wuji.ui.home.ItemListThumb
 import com.litiangu.wuji.ui.home.ItemUiModel
 import com.litiangu.wuji.ui.home.PRIVACY_MASK
 import com.litiangu.wuji.ui.item.decodeImagePath
+import com.litiangu.wuji.ui.theme.CutoutContainerBg
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -114,11 +115,14 @@ fun TimelineRow(
         ) {
             // 缩略图：56 方图圆角 16，贴卡高（80 - 上下 12 = 56 恰好）
             val itemBitmap = decodeImagePath(item.displayImagePath())
+            // [修复11-UI] 抠图态用中性底色，避免分类色从楔形区透出
+            val isCutout = item.displayImagePath() == item.croppedImagePath
+            val thumbBg = if (isCutout) CutoutContainerBg else visual.background
             Box(
                 modifier = Modifier
                     .size(ItemListThumb.size)
                     .clip(RoundedCornerShape(ItemListThumb.radius))
-                    .background(visual.background),
+                    .background(thumbBg),
                 contentAlignment = Alignment.Center,
             ) {
                 if (itemBitmap != null) {

@@ -373,11 +373,9 @@ object SmartCutoutEngine {
         // 削掉最外一层「主体/背景混色」的抗锯齿像素，使顶层前景不带浅色镶边，白边落在真实背景一侧
         morphologicalErodeCross(normAlpha, modelW, modelH)
 
-        // 4.6 [修复11-追加] 封闭内孔填充：识别「被主体完全包围的封闭透明区」（bike 轮辐间隙），
-        // 用 normAlpha=0xFF 标记，合成阶段会自动套用原始 RGB，让楔形区显示原图本色（bike 桃色）。
-        // 这是「两边都修」的算法端：楔形区不再透出预览卡片背景，贴纸在任何容器上都呈现同一视觉。
-        // 与 fillHoles 的差别：本步无视面积阈值与颜色豁免，所有被主体包围的内孔都填充。
-        fillEnclosedHolesWithOriginalRGB(normAlpha, modelW, modelH)
+        // [修复11-追加 已撤回] fillEnclosedHolesWithOriginalRGB 在 [bike_dump3/2_final_mask.png] 验证里把楔形区填成不透明桃色，
+        // 解决了「预览容器色透出」问题但破坏了「透明看穿」的语义——用户对比「最原始干净版本」后要求恢复透明楔形区，
+        // 改由 UI 端统一贴纸容器为中性背景解决。
 
         // [临时调试] 落盘管线中间产物：归一化 raw alpha（判断楔形区模型置信度的关键证据）+ 最终掩码 + 参数。
         // 路径：/sdcard/Android/data/com.litiangu.wuji/files/cutout_debug/，bike 定位完成后移除
@@ -1151,55 +1149,6 @@ object SmartCutoutEngine {
         if (clearCount == 0) return
         if (clearCount > fgCountBefore * POCKET_MAX_CLEAR_RATIO) return
         for (i in 0 until total) if (cleared[i]) alpha[i] = 0
-    }
-
-    /**
-     * [修复11-追加] 封闭内孔填充（填原图本色）。
-     *
-     * 场景：bike 轮辐间隙。修复11 的自适应阈值把雾状低置信带清掉后，楔形区恢复真透明——这在算法上是对的，
-     * 但用户的体验诉求是「贴纸在任何预览容器上都是同一视觉」，于是透明楔形区会透出卡片背景色（暖色卡片→桃色），
-     * 看起来「没抠干净」。本步把被主体完全包围的封闭透明像素重新标为前景，合成阶段套用原原图 RGB，
-     * 楔形区显示原图本色（bike 桃色），跨容器视觉一致。
-     *
-     * 与 fillHoles 的差别：
-     * - fillHoles 有面积上限（≤1024px）与背景色豁免，只补针孔；
-     * - 本步无视面积与颜色，所有「被主体包围、连通不到图像边缘」的透明像素全部填充。
-     *
-     * 边界条件：
-     * - 实心物品（体重秤）→ 无封闭透明区 → 整段跳过，零风险；
-     * - 真正的镂空（如手表的圆形表盘孔）→ 会填成原图本色，损失"看穿"语义——这是用户为视觉一致性接受的成本。
-     */
-    private fun fillEnclosedHolesWithOriginalRGB(alpha: ByteArray, w: Int, h: Int) {
-        val total = w * h
-        val external = BooleanArray(total)
-        val queue = IntArray(total)
-        var head = 0
-        var tail = 0
-        fun seed(idx: Int) {
-            if (external[idx] || alpha[idx] != 0.toByte()) return
-            external[idx] = true
-            queue[tail++] = idx
-        }
-        for (x in 0 until w) {
-            seed(x); seed((h - 1) * w + x)
-        }
-        for (y in 0 until h) {
-            seed(y * w); seed(y * w + w - 1)
-        }
-        while (head < tail) {
-            val idx = queue[head++]
-            val x = idx % w
-            val y = idx / w
-            if (x > 0) seed(idx - 1)
-            if (x < w - 1) seed(idx + 1)
-            if (y > 0) seed(idx - w)
-            if (y < h - 1) seed(idx + w)
-        }
-        for (i in 0 until total) {
-            if (alpha[i] == 0.toByte() && !external[i]) {
-                alpha[i] = 0xFF.toByte()
-            }
-        }
     }
 
     /** 统计前景像素数（alpha 非 0） */

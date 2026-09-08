@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.ui.designsystem.categoryVisual
 import com.litiangu.wuji.ui.item.decodeImagePath
+import com.litiangu.wuji.ui.theme.CutoutContainerBg
 
 /**
  * 模式 B（卡片列表）瀑布流卡（Step 43），规格 §3.4 / §3.5。
@@ -66,11 +67,14 @@ fun ItemWaterfallCard(
     ) {
         // 图区：高按图片比例浮动（112-149dp）
         val itemBitmap = decodeImagePath(item.displayImagePath())
+        // [修复11-UI] 抠图态用中性底色，避免分类色从楔形区透出
+        val isCutout = item.displayImagePath() == item.croppedImagePath
+        val cardBg = if (isCutout) CutoutContainerBg else visual.background
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(imageHeight)
-                .background(visual.background),
+                .background(cardBg),
             contentAlignment = Alignment.Center,
         ) {
             if (itemBitmap != null) {
