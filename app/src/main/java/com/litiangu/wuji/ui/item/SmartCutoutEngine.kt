@@ -98,14 +98,6 @@ object SmartCutoutEngine {
      */
     private const val HOLE_MAX_AREA_ABS = 1024
 
-    // ── [修复12] 封闭内孔填中性灰（业内惯例）──
-    /**
-     * 中性灰 RGB（ARGB 0xFF8C8C8C）。填封闭内孔（如 bike 轮辐间隙）后的楔形区显示此色，
-     * 跨容器、跨主题视觉一致，比「原图本色」更稳（不挑照片），比「透明」更干净（无容器色干扰）。
-     * 实测在白边（#FFFFFF）与常见浅色卡片背景上都呈现「贴纸内部实心」的稳定视觉。
-     */
-    private const val HOLE_FILL_GRAY_RGB = 0xFF8C8C8C.toInt()
-
     // ── [修复10-追加·v2] 看穿区种子生长清理参数 ──
     /**
      * 种子资格：封闭透明连通域的最小面积（模型 1024 分辨率）。
@@ -385,11 +377,9 @@ object SmartCutoutEngine {
         // 削掉最外一层「主体/背景混色」的抗锯齿像素，使顶层前景不带浅色镶边，白边落在真实背景一侧
         morphologicalErodeCross(normAlpha, modelW, modelH)
 
-        // 4.6 [修复12] 封闭内孔填中性灰（业内惯例）。
-        // 与 fillHoles 的差别：本步无视面积阈值与颜色豁免，所有被主体包围的内孔都填。
-        // 填 #8C8C8C 而非原图本色（修复11-追加已撤回）+ 不留透明（修复11-UI 用户改主意），
-        // 跨容器、跨主题视觉一致，保留"内部实心"语义（贴近用户认可的"原始干净版本"）。
-        fillEnclosedHolesWithGray(normAlpha, modelW, modelH, origPixels, origW, origH, fitRatio, fitLeft, fitTop)
+        // [修复13 已撤回] fillEnclosedHolesWithGray（修复12）把楔形区填 #8C8C8C 破坏"透明看穿"语义，
+        // 用户以参考图（纯透明 + 中性底色）对比后要求撤回。楔形区保持真透明，
+        // 由修复11-UI 的 CutoutContainerBg 中性底色兜底透出。
 
         // [临时调试] 落盘管线中间产物：归一化 raw alpha（判断楔形区模型置信度的关键证据）+ 最终掩码 + 参数。
         // 路径：/sdcard/Android/data/com.litiangu.wuji/files/cutout_debug/，bike 定位完成后移除
@@ -1162,73 +1152,8 @@ object SmartCutoutEngine {
         for (i in 0 until total) if (cleared[i]) alpha[i] = 0
     }
 
-    /**
-     * [修复12] 封闭内孔填中性灰（业内惯例）。
-     *
-     * 场景：bike 轮辐间隙。修复11 把雾状低置信带清掉后，楔形区恢复真透明——但用户最终反馈"原始干净版本"是内部实心，
-     * 跨容器/跨主题要稳定视觉。本步把所有被主体包围、连通不到图像边的封闭透明像素视为内孔，整体填 #8C8C8C 中性灰。
-     *
-     * 与 fillHoles 的差别：fillHoles 有面积阈值（≤1024px）与颜色豁免，只补针孔；本步无视面积与颜色，所有内孔都填。
-     * 与 fillEnclosedHolesWithOriginalRGB（已撤回）的差别：本步填中性灰而非原图本色，跨主题稳定。
-     *
-     * 边界：
-     * - 实心物品（体重秤）→ 无封闭透明区 → 整段跳过
-     * - 真正的镂空（手表的表盘孔等）→ 填中性灰，损失"看穿"语义——这是用户为视觉一致性接受的成本
-     *
-     * 做法：
-     * 1. 在模型分辨率洪泛出外部背景 → 未标记的透明像素即内孔
-     * 2. 把内孔在 normAlpha 标 0xFF（合成时变不透明）+ 原图 RGB 改中性灰 → 楔形区显示中性灰实心
-     */
-    private fun fillEnclosedHolesWithGray(
-        normAlpha: ByteArray, modelW: Int, modelH: Int,
-        origPixels: IntArray, origW: Int, origH: Int,
-        fitRatio: Float, fitLeft: Int, fitTop: Int,
-    ) {
-        val total = modelW * modelH
-        val external = BooleanArray(total)
-        val queue = IntArray(total)
-        var head = 0
-        var tail = 0
-        fun seed(idx: Int) {
-            if (external[idx] || normAlpha[idx] != 0.toByte()) return
-            external[idx] = true
-            queue[tail++] = idx
-        }
-        for (x in 0 until modelW) {
-            seed(x); seed((modelH - 1) * modelW + x)
-        }
-        for (y in 0 until modelH) {
-            seed(y * modelW); seed(y * modelW + modelW - 1)
-        }
-        while (head < tail) {
-            val idx = queue[head++]
-            val x = idx % modelW
-            val y = idx / modelW
-            if (x > 0) seed(idx - 1)
-            if (x < modelW - 1) seed(idx + 1)
-            if (y > 0) seed(idx - modelW)
-            if (y < modelH - 1) seed(idx + modelW)
-        }
-
-        // 预标记内孔（避免对每个 orig 像素都重新计算外部背景），逐 orig 像素映射
-        var filledAny = false
-        for (y in 0 until origH) {
-            val mY = (y * fitRatio + fitTop).toInt().coerceIn(0, modelH - 1)
-            val rowBase = y * origW
-            for (x in 0 until origW) {
-                val mX = (x * fitRatio + fitLeft).toInt().coerceIn(0, modelW - 1)
-                val mIdx = mY * modelW + mX
-                if (normAlpha[mIdx] == 0.toByte() && !external[mIdx]) {
-                    normAlpha[mIdx] = 0xFF.toByte()
-                    origPixels[rowBase + x] = HOLE_FILL_GRAY_RGB
-                    filledAny = true
-                }
-            }
-        }
-        if (filledAny) {
-            android.util.Log.d("WUJI_CUTOUT", "fillEnclosedHolesWithGray applied")
-        }
-    }
+    // [修复12 已撤回 2026-09-08] fillEnclosedHolesWithGray（封闭内孔填中性灰）曾把 bike 楔形区填 #8C8C8C，
+    // 用户对比参考图（纯透明 + 中性底色）后要求撤回：楔形区保持真透明，由 UI 端 CutoutContainerBg 兜底。
 
     /** 统计前景像素数（alpha 非 0） */
     private fun countForeground(alpha: ByteArray, total: Int): Int {
