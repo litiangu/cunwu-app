@@ -43,8 +43,28 @@ object SmartCutoutEngine {
 
     // ── alpha 后处理参数 ──
     // 方案 B：窄羽化硬边，浅色主体强制不透明，商品/硬边物品更稳
-    /** 低端硬阈值：alpha 归一化后低于此值的像素强制变全透（当前 0.05，原 0.15/0.10/0.08，便于回退） */
+    /**
+     * 低端硬阈值：alpha 归一化后低于此值的像素强制变全透。
+     * [修复11] 起兼任「不自信带」下界：0.05~[UNCERTAIN_HIGH] 的像素按颜色贴近局部背景场与否裁决。
+     * 历史教训：曾为救浅色主体从 0.15 一路降到 0.05，结果 bike 轮辐间隙的低置信「雾」（raw 0.05~0.15）
+     * 全部被判成前景，辐条增粗粘连吞掉楔形区——这是「最原始版本 bike 正常」之后一切异常的根因。
+     */
     private const val ALPHA_THRESHOLD = 0.05f
+
+    // ── [修复11] 自适应阈值：局部背景场裁决不自信带 ──
+    /**
+     * 自信前景阈值：归一化 alpha 高于此值直接判前景，不做颜色裁决。
+     * bike 实测：楔形区雾状 raw 集中在 0.05~0.15（场距中位仅 2），车架高光 raw 多在 0.4+，
+     * 0.15 分界不碰任何真实主体。
+     */
+    private const val UNCERTAIN_HIGH = 0.15f
+    /**
+     * 背景场匹配容差：不自信带像素与局部背景场估计色的最大单通道差。
+     * 场距 ≤ 此值 → 判背景（轮辐雾）；> 此值 → 保留前景（秤浅蓝秤面距白底场 40+，安全余量 2 倍）。
+     */
+    private const val FIELD_MATCH_TOL = 20
+    /** 背景场网格单元边长（模型分辨率像素）。32 在 1024 网格下给出 32×32 个单元，兼顾平滑与采样密度 */
+    private const val FIELD_CELL = 32
 
     // ── [修复09] 均匀背景先验参数（P0）──
     /** 背景洪泛的工作分辨率长边上限：控内存与耗时，512 足够刻画背景连通性 */
@@ -53,8 +73,12 @@ object SmartCutoutEngine {
     private const val BG_BORDER_SAMPLE_RATIO = 0.03f
     /** 与背景基准色的最大单通道色差（0-255）。24 可容 JPEG 噪声，又能与主体（秤面与白底差 ≈34）拉开 */
     private const val BG_COLOR_TOLERANCE = 24
-    /** 边框像素中落在容差内的比例下限，低于此值视为背景不均匀，整体跳过 P0 */
-    private const val BG_UNIFORM_RATIO = 0.85f
+    /**
+     * 边框模态簇覆盖率下限。[修复11] 起配合「粗直方图模态簇」语义使用：
+     * 0.60 可容纳 bike 的「暖色墙(71%) + 白地板(29%)」双色简单背景；
+     * 复杂实拍背景的模态簇覆盖率通常远低于此，仍会被拒绝。
+     */
+    private const val BG_UNIFORM_RATIO = 0.60f
     /** 掩码被清除的比例上限，超过即判定误吞主体（白叠白极端场景），整体回滚 */
     private const val BG_MAX_REMOVE_RATIO = 0.55f
 
@@ -151,7 +175,11 @@ object SmartCutoutEngine {
             val rawAlpha = outBufs[0].readFloat()
 
             // 5. 后处理：α 硬边 → 缩回原图尺寸 → 套到原图全分辨率 RGB 上
-            val cutout = postprocessAlpha(rawAlpha, src, src.width, src.height, MODEL_SIZE, MODEL_SIZE)
+            // [临时调试] 传入调试目录，落盘管线中间产物，定位 bike 轮辐残留后移除
+            val cutout = postprocessAlpha(
+                rawAlpha, src, src.width, src.height, MODEL_SIZE, MODEL_SIZE,
+                context.getExternalFilesDir("cutout_debug")
+            )
 
             // 6. 贴纸化：白边 + 边缘阴影
             val density = context.resources.displayMetrics.density
@@ -215,11 +243,12 @@ object SmartCutoutEngine {
      *
      * 最终流程：
      * 1. min-max 归一化到 [0,1]
-     * 2. 硬边化：v <= 0.10 → 0, v > 0.10 → 255（无过渡带）
-     * 3. 开运算去孤立噪点 → [修复09] 均匀背景先验清边 → 洪泛填洞
-     * 4. 保留最大连通域 → [修复10] 边缘内缩一圈（削掉混色抗锯齿像素），清除背景误识别孤岛
-     * 5. 仅缩放 alpha 掩码回原图尺寸
-     * 6. 用原图全分辨率 RGB 合成 + [修复10] 二次二值化（消除上采样渐变带导致的向内渗白）
+     * 2. letterbox 坐标系构建颜色数组（[修复11]，与掩码对齐）
+     * 3. 自适应二值化（[修复11]）：v > 0.15 直接前景；0.05~0.15 不自信带按「局部背景场色距」裁决
+     *    （贴近场 → 背景，远离 → 前景），根治 bike 轮辐雾状低置信带被误判为前景的问题
+     * 4. 开运算去孤立噪点 → [修复09] P0 背景先验清边 → 看穿区种子生长（兜底）→ 洪泛填洞
+     * 5. 保留最大连通域 → [修复10] 边缘内缩一圈
+     * 6. 仅缩放 alpha 掩码回原图尺寸，用原图全分辨率 RGB 合成 + [修复10] 二次二值化
      */
     private fun postprocessAlpha(
         rawAlpha: FloatArray,
@@ -227,7 +256,8 @@ object SmartCutoutEngine {
         origW: Int,
         origH: Int,
         modelW: Int,
-        modelH: Int
+        modelH: Int,
+        debugDir: java.io.File? = null
     ): Bitmap {
         val totalPixels = modelW * modelH
 
@@ -240,11 +270,77 @@ object SmartCutoutEngine {
         }
         val range = if (max > min) (max - min) else 1f
 
-        // 2. 硬边化：背景全透 / 前景实色（v <= 0.05 全透，v > 0.05 实色，无过渡带）
+        // 2. 颜色数组按 letterbox 映射构建（与掩码同一坐标系）。
+        // [修复11] 旧实现 createScaledBitmap(src, 1024, 1024) 是拉伸映射，与掩码的 letterbox 坐标
+        // 错位（bike 底部偏差 ~78px），此前一切按掩码坐标查颜色的逻辑实际查的都是错位颜色
+        val fitRatio = minOf(modelW.toFloat() / origW, modelH.toFloat() / origH)
+        val fitLeft = (modelW - (origW * fitRatio).toInt()) / 2
+        val fitTop = (modelH - (origH * fitRatio).toInt()) / 2
+        val actW = (origW * fitRatio).toInt().coerceIn(1, modelW)
+        val actH = (origH * fitRatio).toInt().coerceIn(1, modelH)
+        val scaledContent = Bitmap.createScaledBitmap(src, actW, actH, true)
+        val modelColors = IntArray(totalPixels)
+        java.util.Arrays.fill(modelColors, 0xFF404040.toInt())
+        val contentPixels = IntArray(actW * actH)
+        scaledContent.getPixels(contentPixels, 0, actW, 0, 0, actW, actH)
+        for (y in 0 until actH) {
+            System.arraycopy(contentPixels, y * actW, modelColors, (y + fitTop) * modelW + fitLeft, actW)
+        }
+        if (scaledContent !== src) scaledContent.recycle()
+
+        // 3. 两段式二值化：
+        //    3a. 先按低阈值粗分，取「透明且连通到图像边界」的区域当背景场样本（模型清除的外部背景，最可信）
+        //    3b. 再自适应裁决：v > UNCERTAIN_HIGH 直接前景；0.05 < v <= UNCERTAIN_HIGH 的不自信带，
+        //        颜色贴近局部背景场（场距 <= FIELD_MATCH_TOL）判背景，远离则保留前景。
+        // [修复11 根因] bike 轮辐间隙的模型输出是 raw 0.05~0.15 的雾状低置信带（肉眼看近黑），
+        // 单一低阈值 0.05 把整片雾判成前景，辐条增粗粘连吞掉楔形区；0.15 时代雾全透明所以「最原始正常」。
+        // 浅色主体细节（秤面距白底场 40+）远离场，不受裁决影响。
         val normAlpha = ByteArray(totalPixels)
+        // [临时调试] 同步保存归一化 raw alpha（0-255 灰度），这是判断「楔形区模型置信度」的关键证据
+        val rawNormGray = ByteArray(totalPixels)
         for (i in rawAlpha.indices) {
             val v = (rawAlpha[i] - min) / range
+            val g = (v.coerceIn(0f, 1f) * 255f).toInt()
+            rawNormGray[i] = g.toByte()
             normAlpha[i] = if (v > ALPHA_THRESHOLD) 0xFF.toByte() else 0
+        }
+        val field = buildBackgroundField(normAlpha, modelColors, modelW, modelH)
+        val highT = UNCERTAIN_HIGH
+        if (field != null) {
+            val gw = (modelW + FIELD_CELL - 1) / FIELD_CELL
+            val gh = (modelH + FIELD_CELL - 1) / FIELD_CELL
+            for (y in 0 until modelH) {
+                val fy = (y + 0.5f) / FIELD_CELL - 0.5f
+                val gy0 = fy.toInt().coerceIn(0, gh - 1)
+                val gy1 = (gy0 + 1).coerceIn(0, gh - 1)
+                val wy = (fy - gy0).coerceIn(0f, 1f)
+                val rowBase = y * modelW
+                for (x in 0 until modelW) {
+                    val i = rowBase + x
+                    if (normAlpha[i] != 0xFF.toByte()) continue
+                    val v = (rawAlpha[i] - min) / range
+                    if (v > highT) continue
+                    val fx = (x + 0.5f) / FIELD_CELL - 0.5f
+                    val gx0 = fx.toInt().coerceIn(0, gw - 1)
+                    val gx1 = (gx0 + 1).coerceIn(0, gw - 1)
+                    val wx = (fx - gx0).coerceIn(0f, 1f)
+                    val c = modelColors[i]
+                    val cr = (c ushr 16) and 0xFF
+                    val cg = (c ushr 8) and 0xFF
+                    val cb = c and 0xFF
+                    // 双线性插值出该像素处的背景场估计色
+                    val f00 = field[gy0 * gw + gx0]; val f01 = field[gy0 * gw + gx1]
+                    val f10 = field[gy1 * gw + gx0]; val f11 = field[gy1 * gw + gx1]
+                    val er = ((f00 ushr 16 and 0xFF) * (1 - wx) * (1 - wy) + (f01 ushr 16 and 0xFF) * wx * (1 - wy) +
+                        (f10 ushr 16 and 0xFF) * (1 - wx) * wy + (f11 ushr 16 and 0xFF) * wx * wy)
+                    val eg = ((f00 ushr 8 and 0xFF) * (1 - wx) * (1 - wy) + (f01 ushr 8 and 0xFF) * wx * (1 - wy) +
+                        (f10 ushr 8 and 0xFF) * (1 - wx) * wy + (f11 ushr 8 and 0xFF) * wx * wy)
+                    val eb = ((f00 and 0xFF) * (1 - wx) * (1 - wy) + (f01 and 0xFF) * wx * (1 - wy) +
+                        (f10 and 0xFF) * (1 - wx) * wy + (f11 and 0xFF) * wx * wy)
+                    val d = maxOf(maxOf(Math.abs(cr - er), Math.abs(cg - eg)), Math.abs(cb - eb))
+                    if (d <= FIELD_MATCH_TOL) normAlpha[i] = 0
+                }
+            }
         }
 
         // 3. 形态学处理：一轮开运算去孤立噪点。
@@ -252,22 +348,15 @@ object SmartCutoutEngine {
         morphologicalOpen(normAlpha, modelW, modelH)
 
         // 3.5 [修复09-P0] 均匀背景先验：清掉「与背景同色且连通到图像边界」的掩码像素。
-        // 浅色主体 + 纯白背景时，模型会在真实轮廓外留一圈低置信带，被形态学固化、再被白边膨胀放大成白色凸块。
-        val fitRatio = minOf(modelW.toFloat() / origW, modelH.toFloat() / origH)
-        val fitLeft = (modelW - (origW * fitRatio).toInt()) / 2
-        val fitTop = (modelH - (origH * fitRatio).toInt()) / 2
+        // 浅色主体 + 纯色背景时，模型会在真实轮廓外留一圈低置信带，被形态学固化、再被白边膨胀放大成白色凸块。
+        // [修复11] bgRef 检测改多色调鲁棒（模态簇），bike 的「墙+地板」双色背景不再误判为不均匀；
+        // 颜色数组复用上方 letterbox 版 modelColors（旧拉伸映射已废）。
         val bgRef = detectBackgroundReference(src)
         if (bgRef != null) {
             removeBackgroundBleed(normAlpha, modelW, modelH, src, fitRatio, fitLeft, fitTop, bgRef)
 
-            // 3.5.5 [修复10-追加·v2] 看穿区种子生长清理：
-            // 分割模型对被主体包围的同色区（bike 轮辐间隙）判定不稳定，部分透明部分原色；
-            // 以已透明的封闭间隙为种子（确凿背景），按「锚定色距 + 链式爬坡」生长清透明。
-            // v1 的全局色距分域因背景渐变失效（楔形区距基准色 20+，容差 16 收不进），已替换。
-            val mcBitmap = Bitmap.createScaledBitmap(src, modelW, modelH, true)
-            val modelColors = IntArray(totalPixels)
-            mcBitmap.getPixels(modelColors, 0, modelW, 0, 0, modelW, modelH)
-            if (mcBitmap !== src) mcBitmap.recycle()
+            // 3.5.5 [修复10-追加·v2] 看穿区种子生长清理（兜底）：
+            // 自适应阈值后楔形区雾已清，此处仅清理残余的零星同色误判块，正常情况贡献极小
             clearEnclosedBackgroundPockets(normAlpha, modelW, modelH, modelColors, bgRef)
 
             // 3.6 [修复09-P2] 洪泛填洞（颜色豁免版）：主体内部封闭的「非背景色」透明区补为前景
@@ -283,6 +372,33 @@ object SmartCutoutEngine {
         // 4.5 [修复10-P3-B] 边缘内缩一圈（十字核，模型分辨率）：
         // 削掉最外一层「主体/背景混色」的抗锯齿像素，使顶层前景不带浅色镶边，白边落在真实背景一侧
         morphologicalErodeCross(normAlpha, modelW, modelH)
+
+        // [临时调试] 落盘管线中间产物：归一化 raw alpha（判断楔形区模型置信度的关键证据）+ 最终掩码 + 参数。
+        // 路径：/sdcard/Android/data/com.litiangu.wuji/files/cutout_debug/，bike 定位完成后移除
+        if (debugDir != null) {
+            try {
+                debugDir.mkdirs()
+                fun dumpPng(name: String, bytes: ByteArray) {
+                    val px = IntArray(totalPixels) { i ->
+                        val g = bytes[i].toInt() and 0xFF
+                        (0xFF shl 24) or (g shl 16) or (g shl 8) or g
+                    }
+                    val bm = Bitmap.createBitmap(px, modelW, modelH, Bitmap.Config.ARGB_8888)
+                    java.io.FileOutputStream(java.io.File(debugDir, name)).use { out ->
+                        bm.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    }
+                    bm.recycle()
+                }
+                dumpPng("1_raw_norm.png", rawNormGray)
+                dumpPng("2_final_mask.png", normAlpha)
+                java.io.File(debugDir, "info.txt").writeText(
+                    "orig=${origW}x$origH model=${modelW}x$modelH min=$min max=$max range=$range " +
+                        "threshold=$ALPHA_THRESHOLD bgRef=${bgRef?.toUInt()?.toString(16)}\n"
+                )
+            } catch (_: Exception) {
+                // 调试落盘失败不影响主流程
+            }
+        }
 
         // 5. 把 model 尺寸 alpha 掩码转成 Bitmap，只保留 A 通道（RGB 占位）
         val alphaPixels = IntArray(totalPixels)
@@ -494,11 +610,92 @@ object SmartCutoutEngine {
     // ══════════════════════════════════════════════════════════
 
     /**
-     * [修复09-P0/修复10-追加] 判定原图是否为均匀背景，并取背景基准色。
+     * [修复11] 构建局部背景场：网格化估计「每个位置的背景颜色」。
      *
-     * 流程：缩到工作分辨率 → 边框带采样 → 通道中位数作基准色（比均值更抗「主体入框」干扰）→ 均匀性判定。
+     * 样本 = 低阈值掩码中「透明且连通到图像边界」的像素（模型确定的外部背景，最可信；
+     * 封闭透明区可能是看穿洞，不入样）。空单元（被主体遮挡）由 BFS 从邻单元最近值传播填充。
      *
-     * @return 0xFFRRGGBB 背景基准色；null 表示背景不均匀（复杂实拍场景），调用方跳过全部背景色相关处理
+     * 动机：bike 这类空间渐变背景（边框 230,210,199 → 轮内 241,192,166）下，单一基准色
+     * 无法回答「这个像素像不像它所在位置的背景」；场把判定从全局色距升级为局部色距。
+     * 离线实测（bike 真机 dump）：轮辐雾距场中位仅 2（p90=14），车架高光距场 ≥36，完美分离。
+     *
+     * @return 网格颜色数组（打包 ARGB，gw×gh），无样本时返回 null
+     */
+    private fun buildBackgroundField(
+        alpha: ByteArray, colors: IntArray, w: Int, h: Int
+    ): IntArray? {
+        // 1. 从四边对透明像素洪泛，标记外部背景（真连通，防止封闭看穿洞的异色像素混入样本）
+        val total = w * h
+        val external = BooleanArray(total)
+        val floodQueue = IntArray(total)
+        var fHead = 0; var fTail = 0
+        fun seedFlood(idx: Int) {
+            if (external[idx] || alpha[idx] != 0.toByte()) return
+            external[idx] = true
+            floodQueue[fTail++] = idx
+        }
+        for (x in 0 until w) { seedFlood(x); seedFlood((h - 1) * w + x) }
+        for (y in 0 until h) { seedFlood(y * w); seedFlood(y * w + w - 1) }
+        while (fHead < fTail) {
+            val idx = floodQueue[fHead++]
+            val x = idx % w
+            val y = idx / w
+            if (x > 0) seedFlood(idx - 1)
+            if (x < w - 1) seedFlood(idx + 1)
+            if (y > 0) seedFlood(idx - w)
+            if (y < h - 1) seedFlood(idx + w)
+        }
+
+        // 2. 网格累加外部背景样本
+        val gw = (w + FIELD_CELL - 1) / FIELD_CELL
+        val gh = (h + FIELD_CELL - 1) / FIELD_CELL
+        val sumR = LongArray(gw * gh); val sumG = LongArray(gw * gh); val sumB = LongArray(gw * gh)
+        val cnt = IntArray(gw * gh)
+        for (i in 0 until total) {
+            if (!external[i]) continue
+            val c = colors[i]
+            val gi = (i / w) / FIELD_CELL * gw + (i % w) / FIELD_CELL
+            sumR[gi] += (c ushr 16) and 0xFF
+            sumG[gi] += (c ushr 8) and 0xFF
+            sumB[gi] += c and 0xFF
+            cnt[gi]++
+        }
+        val grid = IntArray(gw * gh)
+        val has = BooleanArray(gw * gh)
+        val queue = IntArray(gw * gh)
+        var head = 0; var tail = 0
+        for (gi in 0 until gw * gh) {
+            if (cnt[gi] == 0) continue
+            grid[gi] = (((sumR[gi] / cnt[gi]).toInt() and 0xFF) shl 16) or
+                (((sumG[gi] / cnt[gi]).toInt() and 0xFF) shl 8) or ((sumB[gi] / cnt[gi]).toInt() and 0xFF)
+            has[gi] = true
+            queue[tail++] = gi
+        }
+        if (tail == 0) return null
+        while (head < tail) {
+            val gi = queue[head++]
+            val gx = gi % gw
+            val gy = gi / gw
+            for (dir in 0 until 4) {
+                val nx = when (dir) { 0 -> gx - 1; 1 -> gx + 1; else -> gx }
+                val ny = when (dir) { 2 -> gy - 1; 3 -> gy + 1; else -> gy }
+                if (nx < 0 || nx >= gw || ny < 0 || ny >= gh) continue
+                val ni = ny * gw + nx
+                if (has[ni]) continue
+                grid[ni] = grid[gi]
+                has[ni] = true
+                queue[tail++] = ni
+            }
+        }
+        return grid
+    }
+
+    /**
+     * [修复09-P0/修复10-追加] 判定原图背景并取基准色（[修复11] 起为多色调鲁棒版）。
+     *
+     * 流程：缩到工作分辨率 → 边框带采样 → 16 级粗直方图取模态簇 → 簇内中位数作基准色 → 覆盖率判定。
+     *
+     * @return 0xFFRRGGBB 背景基准色；null 表示背景复杂（模态簇覆盖率过低），调用方跳过全部背景色相关处理
      */
     private fun detectBackgroundReference(src: Bitmap): Int? {
         val origW = src.width
@@ -534,16 +731,37 @@ object SmartCutoutEngine {
             }
         }
         if (sampleCount < 64) return null
-        val medR = medianOfChannel(samples, sampleCount, 16)
-        val medG = medianOfChannel(samples, sampleCount, 8)
-        val medB = medianOfChannel(samples, sampleCount, 0)
 
-        // 3. 均匀性判定：边框像素落在容差内的比例不足即视为背景不均匀
-        var inTolerance = 0
+        // 3. [修复11] 多色调鲁棒判定：粗直方图取边框模态簇，簇内中位数作基准色。
+        // 旧逻辑要求 85% 边框像素落在基准色容差内，bike 的「暖色墙 + 白地板」双色背景
+        //（白地板占边框带 ~29%）被误判不均匀 → bgRef = null → 颜色机制全跳过（楔形区残留的主因之一）。
+        // 模态簇覆盖率 ≥ BG_UNIFORM_RATIO_NEW 即接受；复杂实拍背景覆盖率低仍返回 null。
+        val q = HashMap<Int, Int>(256)
         for (i in 0 until sampleCount) {
-            if (colorDistance(samples[i], medR, medG, medB) <= BG_COLOR_TOLERANCE) inTolerance++
+            val key = ((samples[i] ushr 20 and 0x0F) shl 8) or
+                ((samples[i] ushr 12 and 0x0F) shl 4) or (samples[i] ushr 4 and 0x0F)
+            q[key] = (q[key] ?: 0) + 1
         }
-        if (inTolerance.toFloat() / sampleCount < BG_UNIFORM_RATIO) return null
+        val modeKey = q.maxByOrNull { it.value }?.key ?: return null
+        val modeR = ((modeKey shr 8) and 0x0F) * 16 + 8
+        val modeG = ((modeKey shr 4) and 0x0F) * 16 + 8
+        val modeB = (modeKey and 0x0F) * 16 + 8
+        val cluster = IntArray(sampleCount)
+        var clusterCount = 0
+        for (i in 0 until sampleCount) {
+            val c = samples[i]
+            if (maxOf(
+                    maxOf(Math.abs((c ushr 16 and 0xFF) - modeR), Math.abs((c ushr 8 and 0xFF) - modeG)),
+                    Math.abs((c and 0xFF) - modeB)
+                ) <= 32
+            ) {
+                cluster[clusterCount++] = c
+            }
+        }
+        if (clusterCount < 64 || clusterCount.toFloat() / sampleCount < BG_UNIFORM_RATIO) return null
+        val medR = medianOfChannel(cluster, clusterCount, 16)
+        val medG = medianOfChannel(cluster, clusterCount, 8)
+        val medB = medianOfChannel(cluster, clusterCount, 0)
         return (0xFF shl 24) or (medR shl 16) or (medG shl 8) or medB
     }
 
