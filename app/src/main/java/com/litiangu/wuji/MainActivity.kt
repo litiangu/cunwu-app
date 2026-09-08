@@ -62,6 +62,11 @@ class MainActivity : ComponentActivity() {
  * FAB「+」→ 分类选择页（Step 12 新增，替代直接进表单）；
  * 顶栏 ⚙ → SettingsScreen；
  * 底栏「分析」tab → AnalysisScreen；各 overlay 返回后回到常驻首页。
+ *
+ * 修复08：Box 内 overlay 叠放顺序即导航栈顺序（后组合 = 更上层）：
+ *   首页 < 分析页 < 分类选择页 < 表单页 < 自定义分类弹窗。
+ * 分析页必须在分类选择页之前组合，否则分析页会盖住分类页（点「+」无画面变化，
+ * 侧滑又命中分析页 BackHandler，露出底下的分类页，表现为「侧滑进入添加页」）。
  */
 @Composable
 fun WujiApp() {
@@ -153,6 +158,17 @@ fun WujiApp() {
                 )
             }
 
+            // ====== 分析页 overlay ======
+            // Step 32：顶栏无返回箭头，返回路径 = 系统返回键（BackHandler 拦截后调 onClose）
+            // 修复08：必须排在分类选择页 / 表单页之前组合，否则会盖住后开的添加流程页。
+            // showAnalysis 保持 true 即代表「来源页面是分析页」，关闭分类页后分析页自然露出。
+            if (showAnalysis) {
+                AnalysisScreen(onClose = {
+                    showAnalysis = false
+                    selectedTab = homeTab
+                })
+            }
+
             // ====== 引导页（首次启动）======
             if (showOnboarding) {
                 OnboardingScreen(
@@ -192,9 +208,11 @@ fun WujiApp() {
                         showCustomCategoryDialog = true
                     },
                     onDismiss = {
-                        // 底部按钮关闭/跳过 → 回到首页或引导页后的首页
+                        // 修复08：仅关闭本页，不触碰 showAnalysis / selectedTab。
+                        // 来源分析页时 showAnalysis 仍为 true → 分析页露出，底栏恢复且高亮「分析」。
                         showCategorySelect = false
                         categorySource = null
+                        preselectedCategoryId = null
                     },
                 )
 
@@ -293,15 +311,6 @@ fun WujiApp() {
                     itemId = showEdit,
                     onDone = { showEdit = null },
                 )
-            }
-
-            // ====== 分析页 overlay ======
-            // Step 32：顶栏无返回箭头，返回路径 = 系统返回键（BackHandler 拦截后调 onClose）
-            if (showAnalysis) {
-                AnalysisScreen(onClose = {
-                    showAnalysis = false
-                    selectedTab = homeTab
-                })
             }
 
             // ====== 底部悬浮导航（Step 32 修订：提升到 WujiApp 层）======

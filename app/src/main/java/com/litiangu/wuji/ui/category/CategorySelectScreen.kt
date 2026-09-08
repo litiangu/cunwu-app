@@ -1,5 +1,6 @@
 package com.litiangu.wuji.ui.category
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
@@ -51,6 +52,12 @@ fun CategorySelectScreen(
     onCustomCategory: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // 修复08：系统返回手势 / 侧滑返回 = 关闭本页（等价于右上角 ×）。
+    // 本页在 WujiApp 的 Box 中后于分析页组合，BackHandler 优先级更高，
+    // 侧滑不会再穿透到下层分析页（旧行为：关掉分析页后露出本页，像是「侧滑进了添加页」）。
+    // 关闭后不改动下层的 showAnalysis，来源分析页时自然回到分析页。
+    BackHandler(onBack = onDismiss)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
