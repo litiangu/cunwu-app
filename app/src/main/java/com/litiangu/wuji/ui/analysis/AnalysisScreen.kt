@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.width
 // 注意：Modifier.weight 是 RowScope/ColumnScope 扩展，在 Row/Column 内容里直接用，
 // 不要 import androidx.compose.foundation.layout.weight，会撞上同名的 internal 属性（Step 51 教训）。
 // 另：IntrinsicSize 也无需 import；Step 51 改用固定高度后已无引用。
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -104,9 +106,12 @@ import kotlinx.coroutines.launch
 
 /**
  * 分析页（Step 32 重设计，对齐 4.0 设计稿；Step 33 底部避让 + 排行榜领奖台）：
- * 顶栏「物品分析 + 刷新圆钮」→ 健康卡（纯结果+最弱维度提示）→ 物品荣誉三联 →
- * 资产结构三栏 → 分类资产分布横向进度条 → 近半年支出趋势（6 月折线+面积+副柱）→
- * 预算遵从（Step 21 原样）→ 页脚隐私声明。
+ * 排序原则（组间从上到下，组内按「结论 → 事实 → 下钻 → 时间 → 控制 → 明细 → 趣味」）：
+ *   A 组 整体概况（首屏）：健康卡（综合结论+最弱维度提示）→ 资产卡（净持有 / 已回流资金）。
+ *   B 组 支出与构成：分类资产分布（资产总额的结构下钻）→ 近半年支出趋势（时间维度）→
+ *      超支警示条（条件渲染）→ 预算遵从（控制维度，紧贴警示条）。
+ *   C 组 明细与趣味：最近变动流水 → 物品荣誉三联 → 页脚隐私声明。
+ * 旧顺序把荣誉三联放在第 2 位，把资产卡挤出首屏；本次按信息层级重排，组件实现零改动。
  * 卡片范式对齐 CategorySelectScreen：24dp 圆角 + surfaceContainerLowest 白底 + 1dp 软阴影。
  * 顶栏无返回箭头（4.0 形态），返回路径 = 系统返回键（BackHandler 拦截后调 onClose）。
  * 底部避让与 HomeScreen 完全一致：Scaffold bottomBar 占位，让 innerPadding 自动预留悬浮底栏空间。
@@ -130,9 +135,12 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
         animationSpec = tween(durationMillis = 600),
         label = "refreshSpin",
     )
-    // 滚动状态上提（Step 37）：超支警示条点击后滚动到底部预算卡
+    // 滚动状态上提（Step 37）：保留给页面 verticalScroll 与后续按需滚动
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
+    // 预算卡锚点（重排后预算卡不再位于页尾）：超支警示条点击后按锚点滚到预算卡，
+    // 替代原先「滚到底」的写法（滚到底会停在荣誉卡 / 页脚，够不到预算卡）。
+    val budgetCardRequester = remember { BringIntoViewRequester() }
 
     // 进入页面即强制重同步（Step 39 验收修复）：后台 Room 订阅之外的确定性兜底。
     // 实测案例：徽章显示 5 件时 DB 已是 6 行（新增/恢复写入后订阅未驱动刷新），
@@ -197,17 +205,28 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
                         .padding(horizontal = 20.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
+                    // ===== A 组 整体概况（首屏）：先给综合结论，再给金额事实 =====
                     HealthCard(state)                                   // 纯结果，无金额，不接 privacyMasked
-                    OverBudgetBanner(state, privacyMasked) {
-                        // 点击滚动到底部预算卡（预算卡是最后一张，滚到底即达）
-                        scope.launch { scrollState.animateScrollTo(scrollState.maxValue) }
-                    }
-                    HonorCard(state.honors, privacyMasked)
                     AssetsCard(state, privacyMasked)
-                    RecentChangesCard(state, privacyMasked)
+
+                    // ===== B 组 支出与构成：结构下钻 → 时间变化 → 控制 =====
+                    // 分类分布紧跟资产卡，构成「资产总额 → 分类拆解」的连续下钻链。
                     CategoryDistributionCard(state, privacyMasked)
                     TrendCard(state, privacyMasked)
-                    BudgetCard(state, privacyMasked)
+                    // 警示条紧贴预算卡：旧序它与预算卡隔 6 张卡，点击后要跨屏跳转。
+                    OverBudgetBanner(state, privacyMasked) {
+                        // 精准滚到预算卡（BringIntoViewRequester），不再滚到页尾。
+                        scope.launch { budgetCardRequester.bringIntoView() }
+                    }
+                    BudgetCard(
+                        state = state,
+                        privacyMasked = privacyMasked,
+                        modifier = Modifier.bringIntoViewRequester(budgetCardRequester),
+                    )
+
+                    // ===== C 组 明细与趣味：最细粒度与情感化收尾 =====
+                    RecentChangesCard(state, privacyMasked)
+                    HonorCard(state.honors, privacyMasked)
                 }
             }
 
@@ -1412,8 +1431,10 @@ private fun MomBadge(values: List<Double>) {
     }
 }
 
-// 超支警示条（Step 37）：超支时前置到健康卡下方，解决「最重要的红色信号沉底在第 8 张卡」。
-// errorContainer 语义红底（主题令牌，深色自动翻转）；隐私模式隐藏金额；点击滚动到底部预算卡。
+// 超支警示条（Step 37）：解决「最重要的红色信号沉底在最后一张卡」。
+// 重排后位置由「健康卡下方」改为「预算卡正上方」：它与预算卡同属支出控制语义，
+// 贴邻后点击只跳一张卡即达（旧序隔 6 张卡，需跨屏滚动）。
+// errorContainer 语义红底（主题令牌，深色自动翻转）；隐私模式隐藏金额；点击滚动到预算卡。
 // 未超支 / 未配置预算时不渲染（复用 Step 29 首页提示行的条件渲染模式）。
 @Composable
 private fun OverBudgetBanner(state: AnalysisUiState, privacyMasked: Boolean, onClick: () -> Unit) {
@@ -1456,15 +1477,20 @@ private fun OverBudgetBanner(state: AnalysisUiState, privacyMasked: Boolean, onC
     }
 }
 
-// ===== 预算遵从卡（Step 21 原样保留，仅位置挪到底部最后一张）=====
+// ===== 预算遵从卡（Step 21 原样保留）=====
+// 位置：B 组末尾、超支警示条正下方（重排前是页尾最后一张，与警示条隔 6 张卡）。
 @Composable
-private fun BudgetCard(state: AnalysisUiState, privacyMasked: Boolean = false) {
+private fun BudgetCard(
+    state: AnalysisUiState,
+    privacyMasked: Boolean = false,
+    modifier: Modifier = Modifier,          // 供超支警示条按锚点滚到本卡
+) {
     val visible = state.monthlyBudget > 0 || state.categoryBudgetRows.isNotEmpty()
     if (!visible) return
 
     val overGlobal = state.monthlyBudget > 0 && state.recentSpend30 > state.monthlyBudget
 
-    AnalysisCardBox {
+    AnalysisCardBox(modifier = modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
                 "预算遵从",
