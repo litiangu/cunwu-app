@@ -185,6 +185,16 @@ object SmartCutoutEngine {
             val density = context.resources.displayMetrics.density
             val sticker = applyStickerEffect(cutout, density)
 
+            // [临时调试] 把最终贴纸也落盘到 cutout_debug，用于诊断"贴纸真透明但用户看到桃色"的根因
+            context.getExternalFilesDir("cutout_debug")?.let { dir ->
+                try {
+                    dir.mkdirs()
+                    java.io.FileOutputStream(java.io.File(dir, "3_final_sticker.png")).use { out ->
+                        sticker.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    }
+                } catch (_: Exception) { }
+            }
+
             return sticker
         } finally {
             model.close()
