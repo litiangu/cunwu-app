@@ -185,10 +185,14 @@ object SmartCutoutEngine {
             val density = context.resources.displayMetrics.density
             val sticker = applyStickerEffect(cutout, density)
 
-            // [临时调试] 把最终贴纸也落盘到 cutout_debug，用于诊断"贴纸真透明但用户看到桃色"的根因
+            // [临时调试] 把 cutout（贴纸前）和 sticker（贴纸后）都落盘到 cutout_debug，
+            // 分离定位 alpha 污染阶段。dump8 实证 4_cutout 楔形区 97% 透明，验证 fix15 生效。
             context.getExternalFilesDir("cutout_debug")?.let { dir ->
                 try {
                     dir.mkdirs()
+                    java.io.FileOutputStream(java.io.File(dir, "4_cutout.png")).use { out ->
+                        cutout.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    }
                     java.io.FileOutputStream(java.io.File(dir, "3_final_sticker.png")).use { out ->
                         sticker.compress(Bitmap.CompressFormat.PNG, 100, out)
                     }
@@ -418,43 +422,35 @@ object SmartCutoutEngine {
             }
         }
 
-        // 5. 把 model 尺寸 alpha 掩码转成 Bitmap，只保留 A 通道（RGB 占位）
-        val alphaPixels = IntArray(totalPixels)
-        for (i in 0 until totalPixels) {
-            val a = normAlpha[i].toInt() and 0xFF
-            alphaPixels[i] = (a shl 24) or 0x00FFFFFF
-        }
-        val alphaBitmap = Bitmap.createBitmap(alphaPixels, modelW, modelH, Bitmap.Config.ARGB_8888)
-
-        // 6. 反向 letterbox：裁切有效区域并把 alpha 单独缩放回原始尺寸
+        // 5. 直接用 normAlpha 数组 nearest-neighbor 采样到原图尺寸，跳过 Bitmap 缩放链路
+        // [修复15 根因] dump6 实证：2_final_mask 楔形区 alpha=0，但 3_final_sticker.png 同位置 alpha=255。
+        // 链路里两处把 0 像素变成 255：
+        //   (a) Bitmap.createBitmap(int[], w, h, ARGB_8888) 对 alpha=0 RGB=0xFFFFFF (or any non-zero) 的
+        //       像素在该设备上处理错误——把 non-premul ARGB(0, R, G, B) 当 premul 存储，unpremultiply
+        //       时除以 0 设为默认 255，导致楔形区 alpha 错误变成 255。
+        //   (b) createScaledBitmap bilinear 在 0/255 边界产生 alpha 中间值，REBINARY(>=128) 全转不透明。
+        // 修复：完全绕开 Bitmap 缩放/合成链路，直接遍历 orig 像素 nearest-neighbor 读 normAlpha 数组；
+        //       合成时 alpha=0 像素的 RGB 强制写 0x000000（避免 RGB 非零引发 premul 处理错误）。
         val ratio = minOf(modelW.toFloat() / origW, modelH.toFloat() / origH)
-        val actualW = (origW * ratio).toInt()
-        val actualH = (origH * ratio).toInt()
+        val actualW = (origW * ratio).toInt().coerceAtLeast(1)
+        val actualH = (origH * ratio).toInt().coerceAtLeast(1)
         val cropLeft = (modelW - actualW) / 2
         val cropTop = (modelH - actualH) / 2
-
-        val croppedAlpha = Bitmap.createBitmap(alphaBitmap, cropLeft, cropTop, actualW, actualH)
-        val fullAlpha = Bitmap.createScaledBitmap(croppedAlpha, origW, origH, true)
-
-        // 7. 读取缩放后的 alpha（原图像素已在函数顶部一次性加载）
-        val scaledAlphaPixels = IntArray(origW * origH)
-        fullAlpha.getPixels(scaledAlphaPixels, 0, origW, 0, 0, origW, origH)
-
-        // 8. 用原始 RGB 合成最终透明前景（避免原图被缩放到 1024 再放大导致的柔化/失色）。
-        // [修复10-P3-A] 二次二值化：双线性上采样把二值掩码磨成渐变带，半透明环会让下方白边透出形成「向内渗白」，
-        // 这里按 50% 等值线恢复硬边（阈值常量 REBINARY_THRESHOLD）
         val resultPixels = IntArray(origW * origH)
-        for (i in resultPixels.indices) {
-            val raw = (scaledAlphaPixels[i] ushr 24) and 0xFF
-            val a = if (raw >= REBINARY_THRESHOLD) 0xFF else 0
-            resultPixels[i] = (a shl 24) or (origPixels[i] and 0x00FFFFFF)
+        for (y in 0 until origH) {
+            val mY = (y * ratio).toInt() + cropTop
+            val origRow = y * origW
+            for (x in 0 until origW) {
+                val mX = (x * ratio).toInt() + cropLeft
+                if (normAlpha[mY * modelW + mX].toInt() != 0) {
+                    resultPixels[origRow + x] = (0xFF shl 24) or (origPixels[origRow + x] and 0x00FFFFFF)
+                } else {
+                    // alpha=0：RGB 强制写 0x000000，避免 Bitmap.createBitmap 对 (0, R, G, B) 的处理错误
+                    resultPixels[origRow + x] = 0
+                }
+            }
         }
         val result = Bitmap.createBitmap(resultPixels, origW, origH, Bitmap.Config.ARGB_8888)
-
-        // 回收中间 Bitmap
-        if (alphaBitmap !== result) alphaBitmap.recycle()
-        if (croppedAlpha !== result) croppedAlpha.recycle()
-        if (fullAlpha !== result) fullAlpha.recycle()
         return result
     }
 
