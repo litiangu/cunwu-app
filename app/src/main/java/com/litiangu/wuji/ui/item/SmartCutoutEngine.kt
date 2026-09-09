@@ -112,6 +112,12 @@ object SmartCutoutEngine {
      */
     private const val POCKET_SEED_MAX_DIST = 48
     /**
+     * [修复18] fillHoles 颜色豁免容差（洞中位色距基准色 ≤ 此值 = 看穿洞，不填）。
+     * 独立于 POCKET_SEED_MAX_DIST：bike 后轮下方楔形区背景渐变更深（实测距 bgRef 达 52），
+     * 48 豁免不到导致楔形被重新填回桃色。豁免 = 不填 = 保持透明，放宽是保守方向。
+     */
+    private const val HOLE_EXEMPT_MAX_DIST = 60
+    /**
      * 锚定容差：候选像素与最近种子中位色的最大距离。
      * 实测 bike：楔形区 80% 像素距种子中位色 ≤12；车架暖色高光距 ~14，被该阈值挡住（这是纯颜色方案下
      * 两者的真实分界，再放宽就会吃掉车架高光）。
@@ -994,7 +1000,9 @@ object SmartCutoutEngine {
                     val refB = bgRef and 0xFF
                     // [修复10-追加·v2] 豁免容差对齐 POCKET_SEED_MAX_DIST(48)：口袋生长清掉的楔形碎块
                     // 颜色比基准色深（实测距 bgRef 可达 45），用旧值 24 会被这里重新填回桃色
-                    if (colorDistance(holeArgb, refR, refG, refB) <= POCKET_SEED_MAX_DIST) continue
+                    // [修复18] 48 → 60：bike 后轮下方楔形区处背景渐变更深（实测距 bgRef 达 52），
+                    // 48 豁免不到被重新填回。豁免 = 不填 = 保持透明，放宽是保守方向无误伤风险
+                    if (colorDistance(holeArgb, refR, refG, refB) <= HOLE_EXEMPT_MAX_DIST) continue
                 }
                 for (i in 0 until cTail) alpha[comp[i]] = 0xFF.toByte()
             }
