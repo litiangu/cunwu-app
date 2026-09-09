@@ -111,6 +111,9 @@ fun ItemDetailOverlay(
             }
             Spacer(Modifier.height(WujiSpace.md))
             // 大图位（有图显示实际图片，无图回退分类图标占位）
+            // [修复19] 容器保持 surfaceContainerLow（深色模式=黑底），与页面深色节奏一致，不靠切底色掩盖。
+            // 抠图 PNG 的「黑圆」根因是浅色主体圆被模型误判为背景抠成透明洞（透出容器色），
+            // 由 SmartCutoutEngine.fillHoles 近圆形大洞判定修复（bbox 填充率 ≥0.72 填回原图色）。
             val detailBitmap = decodeImagePath(item.displayImagePath())
             Box(
                 modifier = Modifier

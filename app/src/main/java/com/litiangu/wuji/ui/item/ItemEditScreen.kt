@@ -646,6 +646,9 @@ fun ItemEditScreen(
  * 顶部图片占位区 / 已选图片展示区。
  * 有图片时显示圆角图片缩略图；无图时显示分类图标 + 相机角标。
  * 点击触发 onClick 回调（Step 14 接入 ImageUploadScreen）。
+ *
+ * [修复19] 容器保持 surfaceContainerLowest（深色模式=黑底），不靠切中性灰底色掩盖。
+ * 抠图 PNG 的「黑圆」由 SmartCutoutEngine.fillHoles 近圆形大洞判定修复（bbox 填充率 ≥0.72 填回原图色）。
  */
 @Composable
 private fun ImagePlaceholder(

@@ -117,6 +117,30 @@ object SmartCutoutEngine {
      * 48 豁免不到导致楔形被重新填回桃色。豁免 = 不填 = 保持透明，放宽是保守方向。
      */
     private const val HOLE_EXEMPT_MAX_DIST = 60
+
+    // ── [修复19-C] 近圆形大洞（主体表面圆形细节）填回参数 ──
+    /**
+     * 大洞 bbox 填充率下限：面积 / bbox 面积 ≥ 此值视为「近圆形」，才填回。
+     *
+     * 背景：体重秤上方 2 个圆是银色金属圆（原图 RGB≈212，带高光），模型把整圆判成背景
+     * （raw alpha 0~5）→ 被洪泛识别为封闭大洞（模型 1024 分辨率下 ~16.4k px）。它在：
+     *   - 面积上超 HOLE_MAX_AREA_ABS(1024)，走不到原填洞逻辑
+     *   - 颜色上距 bgRef 43，落在 HOLE_EXEMPT_MAX_DIST(60) 豁免带内，纯颜色判定无法区分
+     *     它与 bike 楔形区（实测距 bgRef 27~64，两者区间完全重叠）→ 任何全局色距阈值都会误伤一边
+     *
+     * 用形状区分：体重秤圆 bbox 填充率实测 0.788（几何上接近圆），bike 轮辐楔形区实测 0.43~0.60
+     * （扇形/窄条）。填充率阈值 0.72 可将两者完全分开。
+     */
+    private const val HOLE_ROUND_FILL_RATIO = 0.72f
+    /**
+     * 近圆形大洞面积上限占前景面积的比例（模型 1024 分辨率）。
+     * 只给「≤ 直径约 180px 的圆」放行，甜甜圈中孔 / 车架大三角等真镂空（万级到十万级）仍保持透明。
+     */
+    private const val HOLE_ROUND_MAX_AREA_RATIO = 0.05f
+    /**
+     * 近圆形大洞面积绝对上限（px，模型 1024 分辨率）。32768 ≈ 181×181。
+     */
+    private const val HOLE_ROUND_MAX_AREA_ABS = 32768
     /**
      * 锚定容差：候选像素与最近种子中位色的最大距离。
      * 实测 bike：楔形区 80% 像素距种子中位色 ≤12；车架暖色高光距 ~14，被该阈值挡住（这是纯颜色方案下
@@ -926,6 +950,10 @@ object SmartCutoutEngine {
         for (i in 0 until total) if (alpha[i] != 0.toByte()) fgArea++
         if (fgArea == 0) return
         val maxHole = (fgArea * HOLE_MAX_AREA_RATIO).toInt().coerceIn(64, HOLE_MAX_AREA_ABS)
+        // [修复19-C] 近圆形大洞上限（放宽）：让「被误判为背景的主体表面圆」有机会进入形状判定。
+        // bike 楔形区面积可能达 26k（大于下方上限）或 bbox 填充率 <0.72，两关必卡其一，行为不变。
+        val maxHoleRound = (fgArea * HOLE_ROUND_MAX_AREA_RATIO).toInt()
+            .coerceIn(64, HOLE_ROUND_MAX_AREA_ABS)
 
         val visited = BooleanArray(total)
         val queue = IntArray(total)
@@ -1005,6 +1033,26 @@ object SmartCutoutEngine {
                     if (colorDistance(holeArgb, refR, refG, refB) <= HOLE_EXEMPT_MAX_DIST) continue
                 }
                 for (i in 0 until cTail) alpha[comp[i]] = 0xFF.toByte()
+            } else if (cTail <= maxHoleRound) {
+                // [修复19-C] 近圆形大洞：面积超过针孔上限、但 bbox 填充率 ≥ 阈值的大洞，
+                // 语义上是「被模型误判为背景的主体表面圆形细节」（体重秤银色金属圆），填回原图色。
+                // 颜色上它距 bgRef 43，与 bike 楔形区（27~64）区间重叠，纯色距无法区分；
+                // 形状上圆 bbox 填充率 0.788，bike 楔形区 0.43~0.60，0.72 可完全分开。
+                // 不规则镂空（楔形区 / 车架三角）与超大面积镂空（甜甜圈中孔）在此分支外保持透明。
+                var minX = w; var maxX = -1; var minY = h; var maxY = -1
+                for (i in 0 until cTail) {
+                    val pidx = comp[i]
+                    val pxx = pidx % w
+                    val pyy = pidx / w
+                    if (pxx < minX) minX = pxx
+                    if (pxx > maxX) maxX = pxx
+                    if (pyy < minY) minY = pyy
+                    if (pyy > maxY) maxY = pyy
+                }
+                val bbArea = (maxX - minX + 1).toLong() * (maxY - minY + 1)
+                if (bbArea > 0 && cTail.toFloat() / bbArea >= HOLE_ROUND_FILL_RATIO) {
+                    for (i in 0 until cTail) alpha[comp[i]] = 0xFF.toByte()
+                }
             }
         }
     }

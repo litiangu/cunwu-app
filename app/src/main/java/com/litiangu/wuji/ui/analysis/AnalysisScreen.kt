@@ -596,6 +596,8 @@ private fun HonorPod(
     showMedal: Boolean,                 // 仅中央核心物品为 true，名称旁贴一枚小奖牌图标
 ) {
     // 白色圆角背板卡片：与页面背景拉开层级，用尺寸/比例/留白体现主次，而非数字或奖牌台。
+    // [修复19] 卡片本体与图位统一 surfaceContainerLowest（深色模式=黑底），与分析页其它卡片视觉一致。
+    // 抠图「黑圆」由 SmartCutoutEngine.fillHoles 近圆形大洞判定修复（模型 1024 分辨率下 bbox 填充率 ≥0.72 填回）。
     Box(
         modifier = modifier
             .fillMaxWidth()
