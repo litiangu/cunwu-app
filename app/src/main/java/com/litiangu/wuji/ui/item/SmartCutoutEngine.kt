@@ -1204,16 +1204,24 @@ object SmartCutoutEngine {
         // 提取 alpha 通道为 byte 数组（高效操作）
         val alphaBytes = extractAlphaBytes(work, w, h)
 
+        // [修复16 根因] 白边/阴影只画「外部边界」：
+        // morphologicalDilate 膨胀 borderWidthPx 轮，楔形区（辐条间隙）只有 15-40 像素宽，
+        // 左右两侧主体各膨胀 20 像素就完全填满楔形区——用户看到车轮「辐条区间不透明橙/白」。
+        // 修复：先 flood fill 从图像边缘找「外部透明区」，白边和阴影只画在 dilated 与外部透明区的交集，
+        // 内部透明区（楔形区、镂空）不画白边不画阴影，保持真透明。
+        val externalTransparent = findExternalTransparent(alphaBytes, w, h)
+
         // 1. 形态学膨胀得到「放大版 alpha」（用于生成白边区域）
         val dilatedBytes = morphologicalDilate(alphaBytes, w, h, borderWidthPx)
 
-        // 2. 计算边缘带 alpha（膨胀版 − 原版 = 仅边缘区域）
+        // 2. 计算边缘带 alpha（膨胀版 − 原版 = 仅边缘区域），且限制在外部透明区
         val edgeBytes = ByteArray(alphaBytes.size)
         for (i in edgeBytes.indices) {
             val d = dilatedBytes[i].toInt() and 0xFF
             val o = alphaBytes[i].toInt() and 0xFF
-            // 边缘带 = 膨胀后多出来的部分
-            edgeBytes[i] = (d - o).coerceAtLeast(0).toByte()
+            // 边缘带 = 膨胀后多出来的部分 AND 不在内部透明区（楔形区）
+            val delta = (d - o).coerceAtLeast(0)
+            edgeBytes[i] = if (externalTransparent[i] && o == 0) delta.toByte() else 0
         }
 
         // 3. 对边缘带做模糊 → 得到柔和阴影形状
@@ -1233,8 +1241,15 @@ object SmartCutoutEngine {
         // Layer 1（最底）：阴影（仅边缘带，模糊后填半透明黑）
         drawShadowLayer(canvas, shadowShape, w, h, padL, padT, shadowOffX, shadowOffY)
 
-        // Layer 2（中间）：白边（膨胀区域填白）
-        drawWhiteBorder(canvas, dilatedBytes, w, h, padL, padT)
+        // Layer 2（中间）：白边（膨胀区域填白），同样限制在外部透明区
+        // [修复16] 只画 dilated > 0 且在外部透明区的像素；楔形区不画白边
+        val borderMask = ByteArray(alphaBytes.size)
+        for (i in borderMask.indices) {
+            val d = dilatedBytes[i].toInt() and 0xFF
+            val o = alphaBytes[i].toInt() and 0xFF
+            borderMask[i] = if (externalTransparent[i] && o == 0 && d > 0) 0xFF.toByte() else 0
+        }
+        drawWhiteBorder(canvas, borderMask, w, h, padL, padT)
 
         // Layer 3（顶层）：原始前景（覆盖白边内部，保留清晰主体）。
         // [修复03] 改画 work（已含 margin），与阴影/白边两层同偏移对齐，绝对位置与修复前一致
@@ -1242,6 +1257,43 @@ object SmartCutoutEngine {
         work.recycle()
 
         return result
+    }
+
+    /**
+     * [修复16] 从图像四边洪泛，找出「外部透明区」（与图像边缘连通的透明像素）。
+     *
+     * 白边/阴影只应画在主体和外部背景的边界；内部透明区（楔形区、镂空）与图像边缘不连通，
+     * 不应被白边覆盖（否则 border 膨胀 borderWidthPx 轮会把窄楔形区完全填白，视觉上「辐条间隙不透明」）。
+     *
+     * @return BooleanArray，true = 外部透明区（与边缘连通的透明像素）
+     */
+    private fun findExternalTransparent(alpha: ByteArray, w: Int, h: Int): BooleanArray {
+        val total = w * h
+        val external = BooleanArray(total)
+        val queue = IntArray(total)
+        var head = 0
+        var tail = 0
+        fun seed(idx: Int) {
+            if (external[idx] || alpha[idx] != 0.toByte()) return
+            external[idx] = true
+            queue[tail++] = idx
+        }
+        for (x in 0 until w) {
+            seed(x); seed((h - 1) * w + x)
+        }
+        for (y in 0 until h) {
+            seed(y * w); seed(y * w + w - 1)
+        }
+        while (head < tail) {
+            val idx = queue[head++]
+            val x = idx % w
+            val y = idx / w
+            if (x > 0) seed(idx - 1)
+            if (x < w - 1) seed(idx + 1)
+            if (y > 0) seed(idx - w)
+            if (y < h - 1) seed(idx + w)
+        }
+        return external
     }
 
     // ──── 阴影层绘制 ────
