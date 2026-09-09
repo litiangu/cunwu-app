@@ -74,11 +74,13 @@ object SmartCutoutEngine {
     /** 与背景基准色的最大单通道色差（0-255）。24 可容 JPEG 噪声，又能与主体（秤面与白底差 ≈34）拉开 */
     private const val BG_COLOR_TOLERANCE = 24
     /**
-     * 边框模态簇覆盖率下限。[修复11] 起配合「粗直方图模态簇」语义使用：
-     * 0.60 可容纳 bike 的「暖色墙(71%) + 白地板(29%)」双色简单背景；
-     * 复杂实拍背景的模态簇覆盖率通常远低于此，仍会被拒绝。
+     * 边框模态簇覆盖率下限。[修复11] 起配合「粗直方图模态簇」语义使用；
+     * [修复17] 0.60 → 0.45：bike 实测双色背景（暖墙 71% + 白地板 29%）在 createScaledBitmap
+     * bilinear 的边框重采样下 coverage 实测仅 ~59-62%，卡在 0.60 边缘导致 bgRef=null，
+     * P0/口袋清理/填洞颜色豁免全部跳过，楔形区被 fillHoles 部分填成前景（辐条间桃色残留根因）。
+     * 0.45 下 bike 稳过（余量 ~15%）；复杂实拍背景覆盖率通常 < 30%，仍会被拒绝。
      */
-    private const val BG_UNIFORM_RATIO = 0.60f
+    private const val BG_UNIFORM_RATIO = 0.45f
     /** 掩码被清除的比例上限，超过即判定误吞主体（白叠白极端场景），整体回滚 */
     private const val BG_MAX_REMOVE_RATIO = 0.55f
 
