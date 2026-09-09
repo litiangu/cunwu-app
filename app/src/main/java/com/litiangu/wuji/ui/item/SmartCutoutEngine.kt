@@ -432,29 +432,27 @@ object SmartCutoutEngine {
         val actualH = (origH * ratio).toInt()
         val cropLeft = (modelW - actualW) / 2
         val cropTop = (modelH - actualH) / 2
-
         val croppedAlpha = Bitmap.createBitmap(alphaBitmap, cropLeft, cropTop, actualW, actualH)
-        val fullAlpha = Bitmap.createScaledBitmap(croppedAlpha, origW, origH, true)
 
-        // 7. 读取缩放后的 alpha（原图像素已在函数顶部一次性加载）
-        val scaledAlphaPixels = IntArray(origW * origH)
-        fullAlpha.getPixels(scaledAlphaPixels, 0, origW, 0, 0, origW, origH)
-
-        // 8. 用原始 RGB 合成最终透明前景（避免原图被缩放到 1024 再放大导致的柔化/失色）。
-        // [修复10-P3-A] 二次二值化：双线性上采样把二值掩码磨成渐变带，半透明环会让下方白边透出形成「向内渗白」，
-        // 这里按 50% 等值线恢复硬边（阈值常量 REBINARY_THRESHOLD）
+        // 7. 直接用 normAlpha 数组做 nearest-neighbor 采样，跳过 createScaledBitmap
+        // [修复14 根因] createScaledBitmap 的 bilinear 在部分设备上对 "alpha=0, RGB=255" 楔形区像素做插值
+        // 时把 alpha 抬到 128+，REBINARY(>=128) 后整个车轮变不透明（3_final_sticker.png 实测：左轮 0 个透明像素，
+        // 右轮 1 个透明像素；正常应该是数十个楔形透明区）。改用 nearest-neighbor 直接读 normAlpha 数组，
+        // 0/255 严格不混淆。
         val resultPixels = IntArray(origW * origH)
-        for (i in resultPixels.indices) {
-            val raw = (scaledAlphaPixels[i] ushr 24) and 0xFF
-            val a = if (raw >= REBINARY_THRESHOLD) 0xFF else 0
-            resultPixels[i] = (a shl 24) or (origPixels[i] and 0x00FFFFFF)
+        for (y in 0 until origH) {
+            val mY = (y * ratio).toInt() + cropTop
+            val origRow = y * origW
+            for (x in 0 until origW) {
+                val mX = (x * ratio).toInt() + cropLeft
+                val a = if (normAlpha[mY * modelW + mX].toInt() != 0) 0xFF else 0
+                resultPixels[origRow + x] = (a shl 24) or (origPixels[origRow + x] and 0x00FFFFFF)
+            }
         }
         val result = Bitmap.createBitmap(resultPixels, origW, origH, Bitmap.Config.ARGB_8888)
-
         // 回收中间 Bitmap
         if (alphaBitmap !== result) alphaBitmap.recycle()
         if (croppedAlpha !== result) croppedAlpha.recycle()
-        if (fullAlpha !== result) fullAlpha.recycle()
         return result
     }
 
