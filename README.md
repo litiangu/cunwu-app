@@ -56,6 +56,46 @@
 
 ---
 
+---
+
+## 📖 简介
+
+### English Summary
+
+**Cunwu** is a local-first Android app for cataloguing the things you own, built around one question: *is my stuff actually being used?*
+
+Every item you record feeds a two-dimensional **Health Score**:
+
+```
+score = 0.55 × D1(利用率) + 0.45 × D2(价值健康度)
+```
+
+- **D1 Utilization** · in-use items ÷ owned items. Idle objects drag it down.
+- **D2 Value Health** · your daily budget anchor ÷ the aggregate daily cost of holding everything. A coffee maker kept for six years is cheap per day; one replaced yearly is not.
+
+Backgrounds are removed **fully on-device** with `ormbg` (an Apache-2.0 ISNet matting model) running on Google LiteRT. No account, no cloud, no `INTERNET` permission, no analytics. Your data never leaves the device.
+
+### 中文简介
+
+家里东西越买越多，却说不清哪些在用、哪些在吃灰。**存物** 让你把每件物品记下来，然后用一张**健康分**回答那个真正的问题：**这些钱花得值不值？**
+
+健康分由两个维度构成：
+
+| 维度 | 权重 | 含义 |
+| :--- | :---: | :--- |
+| **D1 利用率** | 55% | 使用中 ÷ 在持（已售出不计入分母）。闲置越多，分越低 |
+| **D2 价值健康度** | 45% | `100 × min(1, 每日预算锚点 ÷ 聚合日均持有成本)`。陪伴越久，日均越低，分越高 |
+
+拍下物品照片，App 会在**本机**用 `ormbg`（ISNet 架构，Apache-2.0）抠掉背景并做贴纸化处理，无需联网、无需上传。
+
+所有数据只落在本机：没有账号，没有云端，`AndroidManifest.xml` 里**没有声明 `INTERNET` 权限**。这是一个可以从代码层面验证的承诺。
+
+---
+
+---
+
+---
+
 ## 📸 界面预览
 
 <table>
@@ -96,122 +136,84 @@
 
 ---
 
-## 📖 简介
-
-### English Summary
-
-**Cunwu** is a local-first Android app for cataloguing the things you own, built around one question: *is my stuff actually being used?*
-
-Every item you record feeds a two-dimensional **Health Score**:
-
-```
-score = 0.55 × D1(利用率) + 0.45 × D2(价值健康度)
-```
-
-- **D1 Utilization** · in-use items ÷ owned items. Idle objects drag it down.
-- **D2 Value Health** · your daily budget anchor ÷ the aggregate daily cost of holding everything. A coffee maker kept for six years is cheap per day; one replaced yearly is not.
-
-Backgrounds are removed **fully on-device** with `ormbg` (an Apache-2.0 ISNet matting model) running on Google LiteRT. No account, no cloud, no `INTERNET` permission, no analytics. Your data never leaves the device.
-
-### 中文简介
-
-家里东西越买越多，却说不清哪些在用、哪些在吃灰。**存物** 让你把每件物品记下来，然后用一张**健康分**回答那个真正的问题：**这些钱花得值不值？**
-
-健康分由两个维度构成：
-
-| 维度 | 权重 | 含义 |
-| :--- | :---: | :--- |
-| **D1 利用率** | 55% | 使用中 ÷ 在持（已售出不计入分母）。闲置越多，分越低 |
-| **D2 价值健康度** | 45% | `100 × min(1, 每日预算锚点 ÷ 聚合日均持有成本)`。陪伴越久，日均越低，分越高 |
-
-拍下物品照片，App 会在**本机**用 `ormbg`（ISNet 架构，Apache-2.0）抠掉背景并做贴纸化处理，无需联网、无需上传。
-
-所有数据只落在本机：没有账号，没有云端，`AndroidManifest.xml` 里**没有声明 `INTERNET` 权限**。这是一个可以从代码层面验证的承诺。
-
 ---
 
----
+## 🚀 三分钟上手
 
+三个场景，看懂存物怎么用。
 
-## 🚀 使用示例
+### 示例一 · 记一件东西，两步就好
 
-### 示例 1 · 记录第一件物品
+<table>
+<tr>
+<td width="58%">
 
-1. 首次启动进入**引导页**，点「开始你的第一个物品记录」
-2. 选择分类（数码 / 电器 / 家具 / 工具 / 运动 / 交通）或自定义新建
-3. 填写名称、购入价格、购买日期（内置中文日期选择器）
-4. 设置状态：使用中 / 未使用 / 已售出
-5. 可选填写附加费用（配件、维修）与二手收益金额
-6. 点「保存」，物品立刻出现在首页
+**1. 填信息**
 
-### 示例 2 · 用智能抠图给旧物拍张证件照
+点底部 ➕，选分类（数码 / 电器 / 家具 / 工具 / 运动 / 交通），填名称、
+购入价格、购买日期，状态默认「使用中」。
 
-1. 在物品表单点图片区 → 拍照或从相册选
-2. App 在**本机**用 LiteRT 跑 ormbg 模型推理（1024×1024 输入，CPU）
-3. 后处理流水线依次执行：二值化 → 形态学 → 背景先验 → 填洞 → 最大连通域 → 边缘内缩
-4. 输出贴纸化 PNG：白色描边 + 边缘投影，深浅背景下都清晰
-5. 图片存进应用私有目录，卸载即清除
+**2. 拍照，背景自动抠掉**
 
-> 抠图结果持久化在数据库的图片路径字段里。**升级算法后旧图不会自动重算**，需要手动重新抠图。
+在图片区拍一张或从相册选。App 在**本机**跑 ormbg 模型抠背景，
+自动加白边和投影，负一屏也能看清轮廓。全程不联网。
 
-### 示例 3 · 读懂健康分
+</td>
+<td align="center" width="42%">
+<img src="docs/screenshots/03-item-detail.png" alt="物品详情" width="82%" />
+<br/><sub>抠图成品 · 白边贴纸效果</sub>
+</td>
+</tr>
+</table>
 
-假设你库里有 12 件物品：
+### 示例二 · 健康分告诉你哪件该扔
 
-- 9 件使用中、2 件未使用、1 件已售出
+<table>
+<tr>
+<td width="58%">
 
-**D1 利用率** = 9 ÷ 11（在持 11 件，已售出不计入分母）= **81.8 分**
+健康分由两个维度决定：
 
-**D2 价值健康度**，假设这些物品净投入 ¥8,000，累计陪伴 3,000 天：
+- **利用率**（占 55%）= 使用中 ÷ 在持。闲置越多分越低
+- **价值健康度**（占 45%）= 每日预算锚点 ÷ 日均持有成本。**用得久，日均越低，分越高**
 
-- 聚合日均持有成本 = 8000 ÷ 3000 = ¥2.67 / 天
-- 每日预算锚点 ¥100 → D2 = 100 × min(1, 100 ÷ 2.67) = **100 分**（封顶）
+打个比方：一件 1999 元的沙发用了 71 天，日均约 28 元。
+预算锚点设 100 元/天，光这一件就拉高了整库的健康度。
 
-**总分** = 0.55 × 81.8 + 0.45 × 100 = **90.0 分 → 优「物尽其用」**
+分数分四档：**优 ≥ 85 / 良 ≥ 70 / 中 ≥ 50 / 差**。
+首页和分析页同源同色，看到红色就该去翻排行榜了。
 
-把预算锚点下调到 ¥2 / 天试试，D2 会立刻掉下来。这就是健康分想让你看见的：**日均成本比总价格更诚实**。
+</td>
+<td align="center" width="42%">
+<img src="docs/screenshots/02-analysis.png" alt="分析页健康分" width="82%" />
+<br/><sub>同心多环 · 弧长即各维度得分占比</sub>
+</td>
+</tr>
+</table>
 
-### 示例 4 · 用健康分驱动断舍离
+### 示例三 · 三种视图，三种心情
 
-1. 进**分析页**，首屏是健康卡（同心多环）与资产卡
-2. 健康环偏红（差「该唤醒了」）→ 看下方**物品排行榜**的「日均成本最高」
-3. 找到那件日均 ¥80 的闲置物 → 回首页长按搜索定位
-4. 判定它是淘汰还是转卖 → 填「二手收益金额」，状态改「已售出」
-5. 资产卡的「已回流资金」立刻上涨，**D1 不受拖累**（已售出不计入分母）
-6. 总资产 = Σ(购入 + 附加) − Σ(变现) 同步下降，但**性价比分数上升**
+<table>
+<tr>
+<td align="center" width="33%">
+<img src="docs/screenshots/04-view-timeline.png" alt="时间轴" width="88%" />
+<br/><b>时间轴</b><br/><sub>按购入月份分组<br/>回忆「我什么时候买了什么」</sub>
+</td>
+<td align="center" width="34%">
+<img src="docs/screenshots/05-view-gallery.png" alt="陈列馆" width="88%" />
+<br/><b>陈列馆</b><br/><sub>紧凑圆图网格<br/>快速扫一眼持有全貌</sub>
+</td>
+<td align="center" width="33%">
+<img src="docs/screenshots/07-dark-home.png" alt="深色模式" width="88%" />
+<br/><b>深色模式</b><br/><sub>跟随系统 / 浅色 / 深色<br/>三档自由切换</sub>
+</td>
+</tr>
+</table>
 
-### 示例 5 · 三视图找到那件旧物
-
-首页右上角切换视图：
-
-| 模式 | 适合场景 |
-| :--- | :--- |
-| **时间轴** | 回忆与盘点「这个月买了什么」 |
-| **瀑布流** | 视觉浏览，看图片找某件东西 |
-| **陈列馆** | 快速扫一眼整体持有面貌 |
-
-配合搜索框输入名称片段，或点筛选按钮按状态（使用中 / 未使用 / 已售出）与排序（日期 / 金额，升 / 降）缩小范围。
-
-### 示例 6 · 换机前备份与还原
-
-1. 进**设置 → 数据备份**
-2. 「创建新备份」→ 生成 `.zip`（含 `backup.json` + `images/` 全量图片）
-3. 通过「分享文件」发给云盘，或「保存到手机」落到 Downloads
-4. 换机后装好 App，进入同一页面
-5. 「恢复数据」→ 选 zip → 确认覆盖（事务写入，失败不落脏数据）
-6. 备份提醒阈值可选 3 / 7 / 14 天，超期时首页显示提示行
-
-### 示例 7 · 公开展示时的隐私模式
-
-1. **设置 → 隐私模式** 打开
-2. 首页与分析页的所有金额替换为 `****`
-3. 柱状图高度与占比仍按真实值计算，视觉比例不失真
-4. 适合投屏演示、录屏分享、咖啡馆展示
+配合搜索框输入名称片段，或点筛选按钮按状态（使用中 / 未使用 / 已售出）
+与排序（日期 / 金额，升 / 降）缩小范围。
 
 ---
-
----
-
 
 ## 🔒 隐私承诺
 
