@@ -6,6 +6,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.litiangu.wuji.ui.theme.WujiSize
+import com.litiangu.wuji.ui.theme.WujiSpace
 
 /**
  * [Step 54] 底部系统栏避让高度。悬浮底栏与列表末卡共用这一份数值。
@@ -61,3 +63,17 @@ fun bottomBarInsetDp(minGap: Dp = MinBottomGap): Dp {
  * 数字太小会显得贴边，太大会与胶囊 68.dp 的体量失衡。
  */
 val MinBottomGap: Dp = 24.dp
+
+/**
+ * [Step 56] 页面内容底部避让悬浮胶囊底栏所需的留白。
+ *
+ * 首页列表的 `contentPadding.bottom` 与分析页页脚共用这一个数值，保证两处口径一致。
+ * 早先分析页自己抄了一份公式（页脚只有 `vertical = 24.dp`，滚到底会被胶囊压住），
+ * 提取到本文件就是为了杜绝这种「同一口径两处实现、日后改动只改一处」的漂移。
+ *
+ * 构成（从下往上）：系统栏避让 + 胶囊高68dp + 中央 FAB 凸出 16dp + 呼吸 8dp。
+ */
+@Composable
+fun floatingBarBottomAvoidance(): Dp =
+    bottomBarInsetDp() + WujiSize.bottomBarHeight +
+        WujiSize.bottomBarFabProtrude + WujiSpace.sm

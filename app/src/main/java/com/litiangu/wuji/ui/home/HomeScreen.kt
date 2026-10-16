@@ -63,7 +63,7 @@ import java.util.Date
 import java.util.Locale
 import com.litiangu.wuji.ui.designsystem.CircleIconButton
 import com.litiangu.wuji.ui.designsystem.TimelineRow
-import com.litiangu.wuji.ui.designsystem.bottomBarInsetDp
+import com.litiangu.wuji.ui.designsystem.floatingBarBottomAvoidance
 import com.litiangu.wuji.ui.home.CategoryFilterBar
 import com.litiangu.wuji.ui.onboarding.AppSplash
 import com.litiangu.wuji.ui.theme.BrandOrange
@@ -684,10 +684,12 @@ private fun viewModeIcon(mode: HomeViewMode): ImageVector = when (mode) {
 // WindowInsets），而原版是顶层 val 算不出来。手势导航下系统不给 navigationBars
 // source 时 bottomBarInsetDp() 返回 24.dp 下限；列表须同步加高，否则末卡会被胶囊压住。
 // 详见 ui/designsystem/Insets.kt。
+//
+// [Step 56] 公式已提取为 designsystem 的公共函数 floatingBarBottomAvoidance()，
+// 分析页页脚改为复用它，避免同一口径两处实现、日后只改一处导致漂移。
+// 本别名仅为减少调用处的改动量。
 @Composable
-private fun listBottomAvoidance(): Dp =
-    bottomBarInsetDp() + WujiSize.bottomBarHeight +
-        WujiSize.bottomBarFabProtrude + WujiSpace.sm
+private fun listBottomAvoidance(): Dp = floatingBarBottomAvoidance()
 
 /**
  * 视图切换菜单 overlay（参考 3.5 视图切换按钮状态页面）：

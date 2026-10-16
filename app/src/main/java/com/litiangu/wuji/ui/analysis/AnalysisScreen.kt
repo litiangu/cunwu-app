@@ -89,6 +89,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.domain.DIMENSION_WEIGHTS
 import com.litiangu.wuji.ui.designsystem.categoryDotColor
 import com.litiangu.wuji.ui.designsystem.fireHapticIfEnabled
+import com.litiangu.wuji.ui.designsystem.floatingBarBottomAvoidance
 import com.litiangu.wuji.ui.home.PRIVACY_MASK
 import com.litiangu.wuji.ui.item.decodeImagePath
 import com.litiangu.wuji.ui.theme.CategoryApplianceDark
@@ -115,8 +116,10 @@ import kotlinx.coroutines.launch
  *   C 组 明细与趣味：最近变动流水 → 物品荣誉三联 → 页脚隐私声明。
  * 旧顺序把荣誉三联放在第 2 位，把资产卡挤出首屏；本次按信息层级重排，组件实现零改动。
  * 卡片范式对齐 CategorySelectScreen：24dp 圆角 + surfaceContainerLowest 白底 + 1dp 软阴影。
- * 顶栏无返回箭头（4.0 形态），返回路径 = 系统返回键（BackHandler 拦截后调 onClose）。
- * 底部避让与 HomeScreen 完全一致：Scaffold bottomBar 占位，让 innerPadding 自动预留悬浮底栏空间。
+ * 顶栏无返回箭头（4.0 形态），返回路径 = 系统返回键（Step 55 起由 WujiApp 根层 BackHandler 统一接管）。
+ * [Step 56 修正] 原注释写「底部避让与 HomeScreen 完全一致：Scaffold bottomBar 占位」是**错的**——
+ * 本页 Scaffold 并没有 bottomBar 参数，悬浮胶囊是 WujiApp 层的 Box overlay，不是 Scaffold 子组件。
+ * 现在页脚自行用 bottomBarInsetDp() + 胶囊高 + FAB 凸出 + 呼吸 计算避让，与首页口径一致。
  */
 @Composable
 fun AnalysisScreen(onClose: () -> Unit = {}) {
@@ -240,7 +243,19 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 24.dp),
+                    // [Step 56] 页脚底部避让悬浮胶囊底栏。
+                    //
+                    // 原先只有 vertical = 24.dp，滚到页面底部时这行小字会被浮在
+                    // 内容之上的胶囊盖住。本页的 Scaffold 没有 bottomBar 占位
+                    // （胶囊在 WujiApp 层，是 Box overlay 不是 Scaffold 子组件），
+                    // 所以 Scaffold 的 innerPadding 帮不上忙，必须自己算。
+                    //
+                    // 复用 designsystem 的 floatingBarBottomAvoidance()，与首页列表
+                    // contentPadding.bottom 同一口径，不重复抄公式。
+                    .padding(
+                        top = 24.dp,
+                        bottom = floatingBarBottomAvoidance(),
+                    ),
                 horizontalArrangement = Arrangement.Center,
             ) {
                 Icon(
