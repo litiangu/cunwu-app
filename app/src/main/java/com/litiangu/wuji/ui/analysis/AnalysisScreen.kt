@@ -40,7 +40,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Circle
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
@@ -1491,7 +1491,10 @@ private fun OverBudgetBanner(state: AnalysisUiState, privacyMasked: Boolean, onC
                 modifier = Modifier.weight(1f),
             )
             Icon(
-                Icons.Filled.KeyboardArrowRight,
+                // [Step 57] 原为 Icons.Filled.KeyboardArrowRight（已废弃）。
+                // 改用 AutoMirrored 版本，支持 RTL 布局自动镜像，
+                // 与 SettingsScreen.Chevron() 的写法保持一致。
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 null,
                 tint = MaterialTheme.colorScheme.onErrorContainer,
                 modifier = Modifier.size(16.dp),

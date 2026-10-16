@@ -120,7 +120,7 @@ fun TrashScreen(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     scrolledContainerColor = MaterialTheme.colorScheme.background,
                 ),
@@ -347,7 +347,10 @@ private fun TrashRow(
                 Text(
                     text = buildString {
                         append("删除于 ${formatDeletedDate(entity.deletedAt)}")
-                        if (remainingText != null) append(" · $remainingText")
+                        // [Step 57] remainingText 是 run{} 的两个分支都返回值的非空 String，
+                        // 原来的 `if (remainingText != null)` 恒为真（编译器报的
+                        // "Condition is always 'true'"）。直接拼即可。
+                        append(" · $remainingText")
                     },
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
