@@ -34,8 +34,9 @@ LFS 的 169 MB 是必要成本（模型随包分发，用户 clone 即得，无�
 在你本机执行（PowerShell 或 Git Bash 均可）：
 
 ```bash
+# ⚠️ 密钥必须生成在工程目录之外，绝不要落在代码仓库里
 keytool -genkeypair -v \
-  -keystore cunwu-release.p12 \
+  -keystore C:\Users\GU\keys\cunwu-release.p12 \
   -keyalg RSA -keysize 4096 -validity 10000 \
   -alias cunwu
 ```
@@ -43,7 +44,9 @@ keytool -genkeypair -v \
 提示的 `store password` 与 `key password` 建议设成同一个值。
 `validity 10000` 天约 27 年，避免中途过期导致用户无法升级。
 
-产出 `cunwu-release.p12`，`.gitignore` 已覆盖该后缀，不会误提交。
+**密钥放在工程目录里是被 gitignore 挡住的，但仍属高风险**：
+哪天 `.gitignore` 被改、或有人用 `git add -f`，签名权就公开了。
+统一放`C:\Users\GU\keys\`，靠「不在仓库目录内」这层物理隔离兜底。
 
 ### 1.2 备好四个环境变量
 
@@ -68,6 +71,37 @@ keytool -genkeypair -v \
 > 🔐 **不要**把口令写进 `gradle.properties`、不要提交 `keystore.properties`、不要贴进 Issue。
 > 密钥泄露意味着任何人都能伪造你的应用更新。丢失密钥则无法为已安装用户发布升级，
 > 届时只能改包名重新发布。
+
+### 1.3 ⚠️ Android Studio 里签名不生效（环境块冻结）
+
+**症状**：外部 PowerShell 跑 `signingReport` 显示 `Config: release`，
+但 Android Studio 内置终端跑同一个命令显示 `Config: none`。
+
+**根因**：Windows 环境变量分两层存储：
+
+| 层 | 位置 | 谁读它 |
+| :--- | :--- | :--- |
+| 注册表 | `HKCU\Environment` | **新启动**的进程 |
+| 进程内存 | 每个进程自己的环境块 | 只有它自己 |
+
+`SetEnvironmentVariable(..., "User")` 只写注册表并广播通知，
+**已开着的进程不会更新自己的环境块**。Android Studio 的内置终端与 Run 按钮
+都是从 **IDE 进程**派生的，而 IDE 启动那一刻的环境块已经冻结。
+所以只要 IDE 比你设置变量的时间早，就拿不到新值。
+
+**解决**
+
+| 做法 | 说明 |
+| :--- | :--- |
+| **重启 Android Studio** | 最直接。IDE 重启后重读注册表，变量就位 |
+| 用外部 PowerShell 跑构建 | `assembleRelease` / `signingReport` 都可，不依赖 IDE |
+| 当前终端临时设 | `$env:CUNWU_KEYSTORE_PATH = "..."`，只对该窗口有效 |
+
+> 💡 排查口诀：**外部终端正常 + IDE 里失败 = 环境块冻结，重启 IDE。**
+> 两处都失败才是变量没持久化，去查 §1.2。
+
+`app/build.gradle.kts` 的 `signingConfigs` 已加诊断输出：变量缺失时会在
+Gradle 配置阶段打印缺失项名，并提示上面两条排查路径。
 
 ---
 
@@ -307,7 +341,7 @@ $apk = "E:\AndroidStudioProjects\Wuji\app\build\outputs\apk\release\app-release.
 本工程的签名指纹（2026-10-16 首次生成，**永久有效，务必妥善保存**）：
 
 ```
-Store:  E:\AndroidStudioProjects\Wuji\cunwu-release.p12
+Store:  C:\Users\GU\keys\cunwu-release.p12（**工程目录外**，2026-10-16 迁出）
 Alias:  cunwu
 SHA-1:  02:CD:35:79:42:E0:F6:67:8E:50:4F:FB:31:94:62:0B:F1:A4:70:D6
 SHA-256: 88:DE:16:42:4C:A9:42:0F:4D:03:E7:AD:C3:4B:1E:93:DC:
