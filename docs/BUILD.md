@@ -58,23 +58,42 @@ ls -lh app/src/main/assets/ormbg.tflite
 
 > ⚠️ 模型走 `androidResources { noCompress.add("tflite") }`，禁止被 aapt 压缩，否则 `mmap` 加载失败。请勿改动这条配置。
 
-## 第 3 步 · 配置 JDK ⚠️
+## 第 3 步 · JDK要求
 
-仓库的 `gradle.properties` 里有一行**为本机定制**的绝对路径：
+**本仓库不硬编码任何 JDK 路径**，clone 后开箱即可构建。
 
-```properties
-org.gradle.java.home=C:/Users/GU/.jdks/jdk-21.0.7+6
+工程在 `settings.gradle.kts` 里启用了 `foojay-resolver-convention`，
+Gradle 会自行解析合适的 JDK 工具链，无需配置 `org.gradle.java.home` 或 `JAVA_HOME`。
+
+### 硬性要求
+
+AGP 9.3 需要 **JDK 21**，且必须是**含 `jmods` 的完整 JDK**
+（Android Studio 内置的 JBR 不满足，jlink 阶段会崩）。
+
+foojay 默认解析 Temurin JDK（含 `jmods`），符合要求，无需额外操作。
+
+### 如果构建失败
+
+报 `JdkImageTransform` / jlink 崩溃，说明 Gradle 拿到了不含 `jmods` 的 JDK
+（例如某些环境把 `JAVA_HOME` 指向了 JBR）。此时用环境变量显式指定：
+
+```powershell
+# Windows：永久设置
+setx JAVA_HOME "C:\path\to\jdk-21"
+
+# macOS / Linux：当前会话
+export JAVA_HOME=/path/to/jdk-21
 ```
 
-若你的 JDK 不在这个路径，构建会直接失败。**改成你自己的路径**，或整行删除以回退到 `JAVA_HOME`：
+Linux 环境下还可以装系统的 OpenJDK 21：
 
-```properties
-# 方案 A：指定本机 JDK 21 绝对路径（推荐，AGP 9.3 需要完整 JDK）
-org.gradle.java.home=/your/path/to/jdk-21
-
-# 方案 B：整行删除，改用 JAVA_HOME 或 Android Studio 内置 JDK
-# （若内置的是 JBR 而非完整 JDK，AGP 9.3 会在 jlink 阶段崩溃）
+```bash
+sudo apt install openjdk-21-jdk
 ```
+
+### 关于 `local.properties`
+
+`local.properties` 同样不入版本库，需按第 4 步本地生成。
 
 ## 第 4 步 · 配置 SDK 路径
 
@@ -135,7 +154,7 @@ gradlew.bat assembleRelease
 | 症状 | 根因 | 解决 |
 | :--- | :--- | :--- |
 | `Using kotlin.sourceSets DSL ... is not allowed` | AGP 9.3 内置 Kotlin 默认拦截 KSP 生成目录 | 保持 `android.disallowKotlinSourceSets=false` |
-| `jlink` / `JdkImageTransform` 崩溃 | 用了 JBR 而非完整 JDK 21 | 指向完整 JDK 21 的 `org.gradle.java.home` |
+| `jlink` / `JdkImageTransform` 崩溃 | 环境把 `JAVA_HOME` 指向了 JBR 而非完整 JDK 21 | 用 `JAVA_HOME` 指向完整 JDK 21（见第 3 步） |
 | `graph.bin 拒绝访问`（GBK 乱码） | Windows Defender 锁 `build/` 目录 | 排除目录 + `gradlew --stop` + clean，**不要改代码** |
 | 抠图崩溃且提示模型异常 | LFS 指针未拉取 | `git lfs pull` |
 | `dl.google.com` 超时 | 依赖源网络问题 | `settings.gradle.kts` 已前置阿里云镜像，不通时自动回退官方源 |
