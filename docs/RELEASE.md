@@ -356,6 +356,21 @@ SHA-256: 88:DE:16:42:4C:A9:42:0F:4D:03:E7:AD:C3:4B:1E:93:DC:
 
 ## 4. 实测数据回填
 
+### v1.1.0 构建记录（2026-10-16）
+
+| 项 | 实测值 |
+| :--- | :--- |
+| versionCode / versionName | **2** / **1.1**（`aapt2 dump badging` 核实） |
+| 构建耗时 | **2 分 24 秒**（50 tasks，48 executed，含 R8 + lintVital） |
+| 产物体积 | **187,946,097 字节（179.2 MB）** |
+| R8 | `minifyReleaseWithR8` + `shrinkResources` 均已执行 |
+
+> ✅ **Step 59 的构建改动验证通过**：删除 `org.gradle.java.home` 后，
+> `clean assembleRelease` 一次跑通，无 jlink/JdkImageTransform 问题。
+> foojay 自动解析 JDK 生效，本机无需额外配置。
+
+### v1.0.0 实测数据（2026-10-16 首发）
+
 | 项 | 实测值 | 记录日期 |
 | :--- | :--- | :--- |
 | release APK 体积 | **179.2 MB**（debug 254.0 MB，−29%） | 2026-10-16 |
@@ -373,6 +388,10 @@ SHA-256: 88:DE:16:42:4C:A9:42:0F:4D:03:E7:AD:C3:4B:1E:93:DC:
 
 > ✅ **R8 三路径回归全部通过（2026-10-16 arm64 真机）。**
 > `rules.keep` 的 keep 规则经真机验证有效，release 构建可安全发布。
+
+> ⚠️ **v1.1.0 的 R8 三路径回归尚未做**，发布前必须补：
+> 抠图（LiteRT 加载 ormbg）· 备份还原（serialization）· 冷启动（Room 查询）。
+> R8 的坑全在运行期，编译期一声不吭。
 
 ### 2026-10-16 模拟器验证记录
 

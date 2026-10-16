@@ -17,8 +17,10 @@ android {
         applicationId = "com.litiangu.wuji"
         minSdk = 34
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        // [v1.1.0] versionCode 必须随每个发布递增，否则已装旧版的设备
+        // 会因「降级安装」被 Android 拒绝。versionName 是给用户看的版本号。
+        versionCode = 2
+        versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
