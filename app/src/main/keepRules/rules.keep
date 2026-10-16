@@ -1,12 +1,47 @@
-# Add project specific R8 rules here.
-# AGP will combine all keep rule files in src/main/keepRules to pass to R8
+# 存物 Cunwu · R8 / AGP 9.3 keep 规则
 #
-# For more details, see
-#   https://d.android.com/r/tools/r8/keep-rules
+# AGP 会把 src/main/keepRules 下所有 .keep 文件合并后传给 R8。
+# 启用位置见 app/build.gradle.kts 的 buildTypes.release：
+#   optimization { enable = true }
+#
+# 原则：只写「不加就会崩」的规则，其余交给各依赖自带的 consumer rules。
+# Room / kotlinx.serialization / Compose / AndroidX 都有官方 consumer rules，
+# 且 AGP 9.3 默认已内置 proguard-android-optimize.txt 的等价规则。
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
+# ---------------------------------------------------------------- 端侧推理
+# ormbg 经 LiteRT 的 Java API 加载，算子由 native 侧解析。
+# 保留整包以防 JNI 桥接层的动态符号查找被 R8 改名。
+-keep class com.google.ai.edge.litert.** { *; }
+
+# ---------------------------------------------------------------- 序列化
+# kotlinx.serialization 的 @Serializable 类靠 Companion.serializer() 反射构造，
+# 类名或 serializer() 被裁掉会在反序列化时抛异常。
+# 备份还原（backup.json）、数据库 Converters 都走这条路。
+-keepattributes *Annotation*, InnerClasses
+-keepclassmembers class com.litiangu.wuji.** {
+    *** Companion;
+}
+-keepclasseswithmembers class com.litiangu.wuji.** {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+
+# ---------------------------------------------------------------- Room
+# 实体与 DAO 由 KSP 生成代码在运行期反射构造。
+-keep class com.litiangu.wuji.data.db.** { *; }
+
+# ---------------------------------------------------------------- Compose
+# Compose 编译器会生成必要的 keep 规则。
+# 保底保留本包 UI：@Preview 与跨模块引用场景下 Composable 可能被误裁。
+-keep class com.litiangu.wuji.ui.** { *; }
+
+# ---------------------------------------------------------------- 崩溃栈可读
+# release 崩溃栈混淆后可读性归零，保留行号信息便于定位。
+# 若日后接入 Crashlytics，需额外上传 mapping.txt。
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+
+# ---------------------------------------------------------------- WebView
+# 本工程当前无 WebView。若日后引入 JS bridge，取消下面注释并填入实际类名：
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}

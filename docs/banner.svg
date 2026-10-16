@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="存物 Cunwu — 存下此刻，物有所值">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#161311"/>
+      <stop offset="0.55" stop-color="#0E0D0E"/>
+      <stop offset="1" stop-color="#1A0F08"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FF5500" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#FF5500" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FF5500"/>
+      <stop offset="1" stop-color="#FFB59C"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="300" fill="url(#bg)"/>
+  <ellipse cx="330" cy="150" rx="300" ry="190" fill="url(#glow)"/>
+
+  <!-- 品牌标记：缺口圆角方框 + 橙红圆点 -->
+  <g transform="translate(96,66) scale(0.33)">
+    <path d="M 285 404 H 168 A 60 60 0 0 1 108 344 V 168 A 60 60 0 0 1 168 108 H 344 A 60 60 0 0 1 404 168 V 285"
+          fill="none" stroke="#F5F1EC" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="360" cy="360" r="50" fill="#FF5500"/>
+  </g>
+
+  <!-- 标题 -->
+  <text x="300" y="146" fill="#FFFFFF" font-size="72" font-weight="800"
+        font-family="PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, sans-serif"
+        letter-spacing="6">存物</text>
+  <text x="300" y="196" fill="url(#brand)" font-size="30" font-weight="700"
+        font-family="Inter, Helvetica, Arial, sans-serif" letter-spacing="8">CUNWU</text>
+  <text x="300" y="240" fill="#B9AFA8" font-size="24" font-weight="500"
+        font-family="PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, sans-serif"
+        letter-spacing="3">存下此刻，物有所值</text>
+
+  <!-- 右侧能力标签 -->
+  <g font-family="Inter, Helvetica, Arial, sans-serif" font-size="19" font-weight="600">
+    <rect x="800" y="66" width="150" height="42" rx="21" fill="none" stroke="#3A332F"/>
+    <text x="875" y="93" fill="#E8DFD8" text-anchor="middle">Kotlin</text>
+
+    <rect x="964" y="66" width="180" height="42" rx="21" fill="none" stroke="#3A332F"/>
+    <text x="1054" y="93" fill="#E8DFD8" text-anchor="middle">Jetpack Compose</text>
+
+    <rect x="800" y="122" width="150" height="42" rx="21" fill="none" stroke="#3A332F"/>
+    <text x="875" y="149" fill="#E8DFD8" text-anchor="middle">Material 3</text>
+
+    <rect x="964" y="122" width="180" height="42" rx="21" fill="none" stroke="#3A332F"/>
+    <text x="1054" y="149" fill="#E8DFD8" text-anchor="middle">Room + DataStore</text>
+
+    <rect x="800" y="178" width="150" height="42" rx="21" fill="none" stroke="#3A332F"/>
+    <text x="875" y="205" fill="#E8DFD8" text-anchor="middle">LiteRT</text>
+
+    <rect x="964" y="178" width="180" height="42" rx="21" fill="none" stroke="#3A332F"/>
+    <text x="1054" y="205" fill="#E8DFD8" text-anchor="middle">On-device AI</text>
+  </g>
+
+  <text x="300" y="272" fill="#6E6560" font-size="17" font-weight="500"
+        font-family="Inter, Helvetica, Arial, sans-serif" letter-spacing="1">Local-first · No account · No cloud · No INTERNET permission</text>
+
+  <rect x="0" y="296" width="1200" height="4" fill="url(#brand)"/>
+</svg>

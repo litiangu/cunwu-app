@@ -20,8 +20,16 @@ deploymentTargetDropDown.xml
 render.experimental.xml
 
 # Keystore files
+# keytool 新版默认产出 PKCS#12（.p12），只挡 jks/keystore 会漏
 *.jks
 *.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+
+# 签名环境变量落在本地文件里时也不应入库（见 app/build.gradle.kts 的 signingConfigs）
+keystore.properties
 
 # Google Services
 google-services.json
