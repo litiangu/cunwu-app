@@ -62,6 +62,10 @@ fun CategorySelectScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
+            // [Step 54] 显式避让状态栏/挖孔。本页没有 Scaffold，innerPadding 拿不到 inset，
+            // 原先只靠 Spacer(WujiSpace.xl) 目测挡着。当前机型（152px≈46.8dp 挖孔）恰好没撞上，
+            // 换挖孔更高的机型标题会被啃掉，属防御性改动，视觉上与原状一致。
+            .statusBarsPadding()
             .padding(horizontal = WujiSpace.lg),
     ) {
         // ====== 顶栏：标题 + 右上角 × 圆圈按钮（两种来源统一退出入口） ======

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -48,6 +49,10 @@ fun OnboardingScreen(onStart: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            // [Step 54] 显式避让状态栏/挖孔。本页没有 Scaffold，原先只靠
+            // padding(vertical = WujiSpace.xl) 的固定留白。当前机型（152px≈46.8dp 挖孔）
+            // 恰好没撞上，换挖孔更高的机型 logo 与标题会顶进挖孔里，属防御性改动。
+            .statusBarsPadding()
             .padding(horizontal = WujiSpace.lg, vertical = WujiSpace.xl),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,

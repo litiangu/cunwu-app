@@ -1,12 +1,15 @@
 package com.litiangu.wuji
 
+import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.filled.Home
@@ -28,6 +31,7 @@ import com.litiangu.wuji.data.settings.SettingsDataStore
 import com.litiangu.wuji.ui.analysis.AnalysisScreen
 import com.litiangu.wuji.ui.designsystem.BottomPillBar
 import com.litiangu.wuji.ui.designsystem.BottomTab
+import com.litiangu.wuji.ui.designsystem.bottomBarInsetDp
 import com.litiangu.wuji.ui.home.HomeViewModel
 import com.litiangu.wuji.ui.home.HomeScreen
 import com.litiangu.wuji.ui.item.ItemEditScreen
@@ -49,6 +53,32 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // [Step 54] 显式声明 edge-to-edge。
+        //
+        // targetSdk 36 在 Android 15+ 已被系统强制 edge-to-edge（窗口带
+        // EDGE_TO_EDGE_ENFORCED 标志位铺满全屏），这里显式调用的作用只有两点：
+        //   ① 让系统栏图标的明暗跟随主题切换（深色模式下不会白图标压在浅色背景上）
+        //   ② 语义明确：本 App 自己负责 inset 处理，不指望系统代劳
+        //
+        // ⚠️ 它**不会提供任何底部 inset 高度**。底栏避让走 ui/designsystem/Insets.kt
+        //    的 bottomBarInsetDp()，因为本机实测 navigationBars source 在手势
+        //    导航下压根不存在，navigationBarsPadding() 会返回 0。
+        //
+        // 传 Color.TRANSPARENT（android.graphics 的 Int 常量）让系统栏完全透明，
+        // 页面背景色直接透上去。注意 SystemBarStyle.auto 收的是 Int 类型的
+        // ARGB 色值，不是 androidx.compose.ui.graphics.Color，两者同名易混。
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(
+                lightScrim = Color.TRANSPARENT,
+                darkScrim = Color.TRANSPARENT,
+            ),
+            navigationBarStyle = SystemBarStyle.auto(
+                lightScrim = Color.TRANSPARENT,
+                darkScrim = Color.TRANSPARENT,
+            ),
+        )
+
         setContent {
             WujiApp()
         }
@@ -339,7 +369,11 @@ fun WujiApp() {
                     },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .navigationBarsPadding(),
+                        // [Step 54] 原为 navigationBarsPadding()，实测在红米 K80 至尊版
+                        // 的手势导航下取到 0（系统压根不给 navigationBars source），
+                        // 胶囊因此坐在手势条上。改为「系统值与24.dp 下限取大者」，
+                        // 三键导航下会自动切回系统的 47.1 dp。详见 ui/designsystem/Insets.kt。
+                        .padding(bottom = bottomBarInsetDp()),
                 )
             }
         }

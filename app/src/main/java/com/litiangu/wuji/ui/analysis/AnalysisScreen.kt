@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 // 注意：Modifier.weight 是 RowScope/ColumnScope 扩展，在 Row/Column 内容里直接用，
 // 不要 import androidx.compose.foundation.layout.weight，会撞上同名的 internal 属性（Step 51 教训）。
@@ -151,6 +153,10 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
+        // [Step 54] 显式声明 contentWindowInsets。不写时走 M3 默认值（同样是
+        // safeDrawing），写出来是为了让「顶栏避让挖孔」这件事从隐式依赖变成显式契约，
+        // 避免将来有人改contentWindowInsets 时无声破坏布局。
+        contentWindowInsets = WindowInsets.safeDrawing,
     ) { padding ->
         Column(
             modifier = Modifier

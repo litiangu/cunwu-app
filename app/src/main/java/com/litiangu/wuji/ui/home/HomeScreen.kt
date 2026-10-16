@@ -50,6 +50,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.data.db.CategoryEntity
@@ -59,6 +60,7 @@ import java.util.Date
 import java.util.Locale
 import com.litiangu.wuji.ui.designsystem.CircleIconButton
 import com.litiangu.wuji.ui.designsystem.TimelineRow
+import com.litiangu.wuji.ui.designsystem.bottomBarInsetDp
 import com.litiangu.wuji.ui.home.CategoryFilterBar
 import com.litiangu.wuji.ui.onboarding.AppSplash
 import com.litiangu.wuji.ui.theme.BrandOrange
@@ -326,7 +328,7 @@ fun HomeScreen(
                     start = WujiSpace.lg,
                     end = WujiSpace.lg,
                     top = WujiSpace.md,
-                    bottom = ListBottomAvoidance,
+                    bottom = listBottomAvoidance(),
                 ),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
@@ -439,7 +441,7 @@ fun HomeScreen(
                     start = WujiSpace.lg,
                     end = WujiSpace.lg,
                     top = WujiSpace.md,
-                    bottom = ListBottomAvoidance,
+                    bottom = listBottomAvoidance(),
                 ),
                 verticalItemSpacing = ItemWaterfallLayout.gap,
                 horizontalArrangement = Arrangement.spacedBy(ItemWaterfallLayout.gap),
@@ -502,7 +504,7 @@ fun HomeScreen(
                     start = WujiSpace.lg,
                     end = WujiSpace.lg,
                     top = WujiSpace.md,
-                    bottom = ListBottomAvoidance,
+                    bottom = listBottomAvoidance(),
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -621,8 +623,15 @@ private fun viewModeIcon(mode: HomeViewMode): ImageVector = when (mode) {
 // [修复06] 列表底部避让悬浮胶囊底栏：胶囊 68dp + FAB 凸出 16dp + 8dp 呼吸。
 // 底栏在 WujiApp 层悬浮于内容上方（Scaffold 无 bottomBar 占位，padding.bottom 仅含系统手势条），
 // 原来三个列表 contentPadding bottom = 0，末卡静止时垫在胶囊后，左滑的编辑/删除操作区被盖住无法点击。
-private val ListBottomAvoidance =
-    WujiSize.bottomBarHeight + WujiSize.bottomBarFabProtrude + WujiSpace.sm
+//
+// [Step 54] 前置系统栏避让。做成函数而非常量，因为系统 inset 是运行时值（要读
+// WindowInsets），而原版是顶层 val 算不出来。手势导航下系统不给 navigationBars
+// source 时 bottomBarInsetDp() 返回 24.dp 下限；列表须同步加高，否则末卡会被胶囊压住。
+// 详见 ui/designsystem/Insets.kt。
+@Composable
+private fun listBottomAvoidance(): Dp =
+    bottomBarInsetDp() + WujiSize.bottomBarHeight +
+        WujiSize.bottomBarFabProtrude + WujiSpace.sm
 
 /**
  * 视图切换菜单 overlay（参考 3.5 视图切换按钮状态页面）：
