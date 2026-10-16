@@ -362,12 +362,22 @@ SHA-256: 88:DE:16:42:4C:A9:42:0F:4D:03:E7:AD:C3:4B:1E:93:DC:
 | :--- | :--- |
 | versionCode / versionName | **2** / **1.1**（`aapt2 dump badging` 核实） |
 | 构建耗时 | **2 分 24 秒**（50 tasks，48 executed，含 R8 + lintVital） |
-| 产物体积 | **187,946,097 字节（179.2 MB）** |
+| 产物大小 | **187,978,932 字节（179.3 MB）** |
+| 签名校验 | **`Verifies` 通过**，v3 方案（与 v1.0.0 同密钥） |
+| 签名 SHA-256 | `88:DE:16:42:4C:A9:42:0F:4D:03:E7:AD:C3:4B:1E:93:DC:55:0A:9F:0C:F6:6B:7D:D:6C:0B:E3:51:8F:84:A7:BF` |
+| 签名 SHA-1 | `02:CD:35:79:42:E0:F6:67:8E:50:4F:FB:31:94:62:0B:F1:A4:70:D6` |
 | R8 | `minifyReleaseWithR8` + `shrinkResources` 均已执行 |
 
+> ✅ **签名与 v1.0.0 完全一致**，已装 v1.0.0 的用户可直接覆盖升级，数据库结构未变，数据不丢。
+>
 > ✅ **Step 59 的构建改动验证通过**：删除 `org.gradle.java.home` 后，
-> `clean assembleRelease` 一次跑通，无 jlink/JdkImageTransform 问题。
+> `clean assembleRelease` 一次跑通，无 jlink/JdkImageTransform 问题，
 > foojay 自动解析 JDK 生效，本机无需额外配置。
+
+> ⚠️ **R8 三路径回归待补**（真机）：
+> 抠图（LiteRT 加载 ormbg）· 备份还原（serialization）· 冷启动（Room 查询）。
+> R8 的坑全在运行期，编译期一声不吭。v1.0.0 时这三条已验证通过，
+> v1.1.0 的 keep 规则未改动，风险低，但仍建议补测。
 
 ### v1.0.0 实测数据（2026-10-16 首发）
 
@@ -386,12 +396,8 @@ SHA-256: 88:DE:16:42:4C:A9:42:0F:4D:03:E7:AD:C3:4B:1E:93:DC:
 | 抠图功能回归 | **通过**（arm64 真机，LiteRT 加载正常） | 2026-10-16 |
 | 备份还原回归 | **通过**（arm64 真机，backup.json 反序列化正常） | 2026-10-16 |
 
-> ✅ **R8 三路径回归全部通过（2026-10-16 arm64 真机）。**
+> ✅ **R8 三路径回归全部通过（2026-10-16 arm64 真机，v1.0.0）。**
 > `rules.keep` 的 keep 规则经真机验证有效，release 构建可安全发布。
-
-> ⚠️ **v1.1.0 的 R8 三路径回归尚未做**，发布前必须补：
-> 抠图（LiteRT 加载 ormbg）· 备份还原（serialization）· 冷启动（Room 查询）。
-> R8 的坑全在运行期，编译期一声不吭。
 
 ### 2026-10-16 模拟器验证记录
 
