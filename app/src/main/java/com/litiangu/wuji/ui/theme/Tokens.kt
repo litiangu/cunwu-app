@@ -188,11 +188,3 @@ object WujiSize {
     val bottomBarFabProtrude = 16.dp   // Step 34 中央 + 按钮凸出胶囊顶部的高度
 }
 
-/**
- * [修复11-UI] 抠图贴纸容器底色。
- * 首页画廊/瀑布/时间线/详情缩略图的图区背景：原图态用分类色（识别分类），抠图态必须用中性色，
- * 否则分类色（暖色）会从贴纸楔形区透出，视觉上「没抠干净」。
- * 中性灰 #F0F0F0 与编辑页预览底色 0xFFE0E0E0 略亮一档，对暗色主题也能保证视觉一致。
- */
-val CutoutContainerBg = Color(0xFFF0F0F0)
-

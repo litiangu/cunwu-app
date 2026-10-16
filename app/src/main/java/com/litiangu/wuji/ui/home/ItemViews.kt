@@ -28,7 +28,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.ui.designsystem.categoryVisual
 import com.litiangu.wuji.ui.item.decodeImagePath
-import com.litiangu.wuji.ui.theme.CutoutContainerBg
 
 /**
  * 模式 C（紧凑列表）陈列馆格（Step 44），规格 §4.3 / §4.4。
@@ -62,9 +61,11 @@ fun ItemExhibitCell(
     ) {
         // 图区：96×96 方图（与列宽一致），Fit 完整显示，底色承担分类识别
         val cellBitmap = decodeImagePath(item.displayImagePath())
-        // [修复11-UI] 抠图态用中性底色，避免分类色从楔形区透出
         val isCutout = item.displayImagePath() == item.croppedImagePath
-        val cellBg = if (isCutout) CutoutContainerBg else visual.background
+        // [修复19-C] 抠图态用 surfaceContainerLowest（深色模式=#0E0D0E 黑），与深色页面统一。
+        // 白边贴纸在黑底上对比强（白线 vs 黑），深色主体在黑底上靠白边勾勒轮廓。
+        val cellBg = if (isCutout) MaterialTheme.colorScheme.surfaceContainerLowest
+                     else visual.background
         Box(
             modifier = Modifier
                 .fillMaxWidth()

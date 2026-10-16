@@ -424,8 +424,8 @@ object SmartCutoutEngine {
         morphologicalErodeCross(normAlpha, modelW, modelH)
 
         // [修复13 已撤回] fillEnclosedHolesWithGray（修复12）把楔形区填 #8C8C8C 破坏"透明看穿"语义，
-        // 用户以参考图（纯透明 + 中性底色）对比后要求撤回。楔形区保持真透明，
-        // 由修复11-UI 的 CutoutContainerBg 中性底色兜底透出。
+        // 用户以参考图对比后要求撤回。楔形区保持真透明，由 UI 端统一容器底色兜底透出
+        // （修复19-C 后：首页三视图用 surfaceContainerLowest 深色黑底兜底，与深色页面统一）。
 
         // [临时调试] 落盘管线中间产物：归一化 raw alpha（判断楔形区模型置信度的关键证据）+ 最终掩码 + 参数。
         // 路径：/sdcard/Android/data/com.litiangu.wuji/files/cutout_debug/，bike 定位完成后移除
@@ -1217,7 +1217,7 @@ object SmartCutoutEngine {
     }
 
     // [修复12 已撤回 2026-09-08] fillEnclosedHolesWithGray（封闭内孔填中性灰）曾把 bike 楔形区填 #8C8C8C，
-    // 用户对比参考图（纯透明 + 中性底色）后要求撤回：楔形区保持真透明，由 UI 端 CutoutContainerBg 兜底。
+    // 用户对比参考图后要求撤回：楔形区保持真透明，由 UI 端统一容器底色兜底透出。
 
     /** 统计前景像素数（alpha 非 0） */
     private fun countForeground(alpha: ByteArray, total: Int): Int {
