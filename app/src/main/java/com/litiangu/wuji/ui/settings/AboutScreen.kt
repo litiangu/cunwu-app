@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.litiangu.wuji.BuildConfig
+import com.litiangu.wuji.ui.LegalPage
 import com.litiangu.wuji.R
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
@@ -54,11 +56,25 @@ import com.litiangu.wuji.ui.theme.WujiSpace
 @Composable
 fun AboutScreen(
     onBack: () -> Unit = {},
+    /**
+     * [Step 55] 初始法律内容页。由根层导航栈驱动（`Overlay.AboutLegal`），
+     * 传入非null 即直接叠加显示对应条款页。
+     *
+     * 改造前这里是 AboutScreen 内部的 `legalPage` 私有状态，
+     * 根层拿不到 → 这一层无法纳入统一返回栈 → 侧滑返回时会被漏掉。
+     * 提升到根层后，侧滑 / 导航键才能正确逐层返回。
+     *
+     * 保留 `remember` 是为了在根层切换 LegalPage 时内部状态能同步刷新，
+     * 不需要 key 重置整个 composable。
+     */
+    initialLegalPage: LegalPage? = null,
 ) {
     // 版本号直接读 BuildConfig（编译期由 build.gradle.kts versionName 注入）。
     val versionName = BuildConfig.VERSION_NAME
-    // 法律内容页本地状态：null = 显示关于主页；非 null = 叠加显示对应全屏内容（用户协议 / 开源许可）。
-    var legalPage by remember { mutableStateOf<LegalPage?>(null) }
+    // 法律内容页状态：null = 显示关于主页；非 null = 叠加显示对应全屏内容（用户协议 / 开源许可）。
+    // [Step 55] 不再用 remember 记初值，改由根层每次重组时同步下来。
+    var legalPage by remember { mutableStateOf(initialLegalPage) }
+    LaunchedEffect(initialLegalPage) { legalPage = initialLegalPage }
 
     // 用 Box 包住主 Scaffold 与法律子 overlay，保证 overlay 在 z 轴压住主 Scaffold 顶栏。
     Box(modifier = Modifier.fillMaxSize()) {
@@ -206,12 +222,6 @@ fun AboutScreen(
             LegalContentOverlay(page = page, onBack = { legalPage = null })
         }
     }
-}
-
-/** 法律内容枚举：用户协议 / 开源许可。 */
-private enum class LegalPage {
-    USER_AGREEMENT,
-    OPEN_SOURCE,
 }
 
 /**

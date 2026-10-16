@@ -4,30 +4,45 @@ import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.WujiApplication
 import com.litiangu.wuji.data.db.CategoryEntity
 import com.litiangu.wuji.data.db.WujiDatabaseProvider
 import com.litiangu.wuji.data.settings.DarkModePref
 import com.litiangu.wuji.data.settings.SettingsDataStore
+import com.litiangu.wuji.ui.LegalPage
+import com.litiangu.wuji.ui.Overlay
+import com.litiangu.wuji.ui.containsOverlay
+import com.litiangu.wuji.ui.isDialog
 import com.litiangu.wuji.ui.analysis.AnalysisScreen
 import com.litiangu.wuji.ui.designsystem.BottomPillBar
 import com.litiangu.wuji.ui.designsystem.BottomTab
@@ -46,7 +61,6 @@ import com.litiangu.wuji.ui.settings.TrashScreen
 import com.litiangu.wuji.ui.settings.BackupScreen
 import com.litiangu.wuji.ui.settings.AboutScreen
 import com.litiangu.wuji.ui.theme.WujiTheme
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 
@@ -88,15 +102,29 @@ class MainActivity : ComponentActivity() {
 /**
  * 应用根：读取深色偏好驱动主题（三档：跟随系统/浅色/深色）。
  *
- * 首页常驻，设置/新增/分析/分类选择 以全屏 overlay 叠放其上（保留首页滚动与筛选状态）。
- * FAB「+」→ 分类选择页（Step 12 新增，替代直接进表单）；
- * 顶栏 ⚙ → SettingsScreen；
- * 底栏「分析」tab → AnalysisScreen；各 overlay 返回后回到常驻首页。
+ * ── [Step 55] 导航模型 ────────────────────────────────────────
  *
- * 修复08：Box 内 overlay 叠放顺序即导航栈顺序（后组合 = 更上层）：
- *   首页 < 分析页 < 分类选择页 < 表单页 < 自定义分类弹窗。
- * 分析页必须在分类选择页之前组合，否则分析页会盖住分类页（点「+」无画面变化，
- * 侧滑又命中分析页 BackHandler，露出底下的分类页，表现为「侧滑进入添加页」）。
+ * 改造前用 10 个并行布尔表示导航状态，带来两个问题：
+ *   · 侧滑返回退到桌面（7 个页面漏注册 `BackHandler`）
+ *   · 页面切换无任何过渡动画（`if` 硬挂载，composable 凭空出现）
+ *
+ * 现在收敛为**一个 overlay 栈**（`mutableStateListOf<Overlay>`）：
+ *   · 返回 = 弹栈尾（[BackHandler] 统一在根层注册一次，覆盖全部页面）
+ *   · 转场 = `AnimatedContent` 按 targetState 切换，自带进出场
+ *   · 参数 = 随 sealed 分支携带，不再需要并行布尔同步
+ *
+ * 首页 / 分析页是**底层 tab**（不属于栈），由 [selectedTab] 表示：
+ * 底栏在这两者间切换；栈非空时底栏隐藏，由 [showBottomBar] 控制。
+ *
+ * ── 返回语义（自上而下）────────────────────────────────────
+ *
+ * 1. 栈非空 → 弹栈尾（关掉当前 overlay，下层页面原样露出）
+ * 2. 当前在分析页 → 回首页
+ * 3. 当前在首页且列表未在顶部 → 滚回顶部（不清筛选、不改布局）
+ * 4. 当前在首页且已在顶部 → 退出 App
+ *
+ * 引导页（`showOnboarding`）由 `launchedBefore` 决定，不属于栈，
+ * 返回时按系统默认退出 —— 首次启动没有「上一页」可退。
  */
 @Composable
 fun WujiApp() {
@@ -112,37 +140,33 @@ fun WujiApp() {
         val homeTab = remember { BottomTab("首页", Icons.Filled.Home) }
         val analysisTab = remember { BottomTab("分析", Icons.Filled.Insights) }
 
-        // ====== overlay 状态变量（布尔状态机）======
-        var showAdd by remember { mutableStateOf(false) }
-        var showSettings by remember { mutableStateOf(false) }
-        var showAnalysis by remember { mutableStateOf(false) }
-        var showEdit by remember { mutableStateOf<Long?>(null) }
+        // ====== [Step 55] 导航状态 ======
+
+        /**
+         * overlay 栈。用 List 而非单个 Overlay?，这样「关子页后父页原样露出」
+         * 才成立（设置 → 最近删除 → 返回，设置页的滚动位置与筛选状态都在）。
+         */
+        val overlayStack = remember { mutableStateListOf<Overlay>() }
+        val currentOverlay = overlayStack.lastOrNull()
+
+        /** 底层 tab：首页 ↔ 分析。不进栈，因为它们是常驻页面而非叠加层。 */
         var selectedTab by remember { mutableStateOf(homeTab) }
 
-        // Step 12 新增：分类选择页状态
-        var showCategorySelect by remember { mutableStateOf(false) }
+        // 打开一个 overlay。已存在则忽略（防连点导致同页压多层）。
+        val openOverlay: (Overlay) -> Unit = { target ->
+            if (!overlayStack.containsOverlay(target)) overlayStack.add(target)
+        }
+        // 弹栈顶。等价于旧代码里各个 `showXxx = false`，但语义统一。
+        val popOverlay: () -> Unit = {
+            if (overlayStack.isNotEmpty()) overlayStack.removeAt(overlayStack.lastIndex)
+        }
+
         // 来源标记：null = 普通入口（首页 FAB），"onboarding" = 引导页 CTA
         var categorySource by remember { mutableStateOf<String?>(null) }
         // 用户在分类选择页选中的 categoryId，传给 ItemEditScreen 做预选
         var preselectedCategoryId by remember { mutableStateOf<Long?>(null) }
-        // 自定义分类弹窗是否显示
+        // 自定义分类弹窗是否显示（AlertDialog 自带返回，不进栈）
         var showCustomCategoryDialog by remember { mutableStateOf(false) }
-
-        // Step 20 新增：预算锚点编辑子页状态（以全屏 overlay 叠在设置页之上）。
-        // Step 21 增强：分类月度预算直接内联在本页，不再独立 overlay。
-        var showBudgetAnchor by remember { mutableStateOf(false) }
-
-        // Step 22 新增：最近删除（回收站）列表页状态（以全屏 overlay 叠在设置页之上）。
-        var showTrash by remember { mutableStateOf(false) }
-
-        // Step 23 新增：数据备份（导出 / 导入）页状态（以全屏 overlay 叠在设置页之上）。
-        var showBackup by remember { mutableStateOf(false) }
-
-        // Step 24 新增：关于页状态（以全屏 overlay 叠在设置页之上）。
-        var showAbout by remember { mutableStateOf(false) }
-
-        // Step 25 新增：用户信息编辑（昵称+头像）页状态（以全屏 overlay 叠在设置页之上）。
-        var showProfileEdit by remember { mutableStateOf(false) }
 
         // 启动就绪闸门：WujiApplication 预热完成（数据库构建完 + 首启标记读出）后 isReady=true。
         val app = context.applicationContext as WujiApplication
@@ -157,49 +181,104 @@ fun WujiApp() {
             } else null
         }
 
-        // 点 CTA 后本会话强制进首页，不等 DataStore 异步落盘，消除表单延迟。
+        // 点 CTA 后本会话强制进首页，不等DataStore 异步落盘，消除表单延迟。
         var forceHome by remember { mutableStateOf(false) }
 
         val showOnboarding = isReady && !app.launchedBefore && !forceHome
         val showHome = isReady && homeVm != null && !showOnboarding
 
-        // Step 32 修订：分析页打开/关闭时同步底栏 selectedTab，
-        // 保证底栏高亮与「当前页面对应 tab」语义一致（首页 ↔ 分析 切换正确）。
-        androidx.compose.runtime.LaunchedEffect(showAnalysis) {
-            selectedTab = if (showAnalysis) analysisTab else homeTab
+        /**
+         * [Step 55] 首页滚动状态：供返回栈判断「是否已在顶部」。
+         * HomeScreen 在三视图切换时各自持有滚动状态，这里只接收它上报的布尔值。
+         */
+        var homeListAtTop by remember { mutableStateOf(true) }
+
+        /**
+         * [Step 55] 首页回顶动作。HomeScreen 通过 onRequestScrollTop 暴露触发入口，
+         * 因为滚动容器在 HomeScreen 内部，根层拿不到 state 对象。
+         */
+        var homeScrollTopSignal by remember { mutableStateOf(0) }
+        val requestHomeScrollTop = { homeScrollTopSignal++ }
+
+        // 退出 App：首页且列表已在顶部时的最终返回动作（选项 B）。
+        val activity = context as? android.app.Activity
+        val exitApp: () -> Unit = { activity?.finish() }
+
+        // ============================================================
+        // [Step 55] 统一返回栈：侧滑 / 导航键 / 手势返回全部走这里。
+        //
+        // 改造前只有分析页、分类选择页、表单页三处注册 `BackHandler`，
+        // 设置页及其六个子页全部漏掉，导致侧滑返回直接结束 Activity。
+        // 现在收敛到根层注册一次，新增页面自动被覆盖，不会再漏。
+        //
+        // enabled = showHome：仅在首页/分析页已就绪时接管返回。
+        // 引导页与品牌启动页阶段（showHome 为 false）不接管，让系统默认退出 ——
+        // 那两个页面没有「上一页」可退，拦截反而会让用户卡住退不出来。
+        //
+        // ⚠️ ItemEditScreen 的 BackHandler **保留不动**：它负责脏数据二次确认
+        // （Step 14 放弃保护），删掉会丢失保护。Compose 规则是「后组合者优先」，
+        // 表单在 AnimatedContent 内部组合，晚于本处，所以它天然优先 ——
+        // 正好是想要的优先级顺序。
+        // ============================================================
+        BackHandler(enabled = showHome) {
+            when {
+                // 1. 有 overlay：弹栈顶（关掉当前页，下层原样露出）
+                overlayStack.isNotEmpty() -> popOverlay()
+                // 2. 在分析页：回首页
+                selectedTab != homeTab -> selectedTab = homeTab
+                // 3. 首页且列表未在顶部：先回顶部（选项 B），不清筛选不重置页面
+                !homeListAtTop -> requestHomeScrollTop()
+                // 4. 首页且已在顶部：才真正退出 App
+                else -> exitApp()
+            }
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
-            // ====== 首页（常驻底层）======
-            // Step 32 修订：BottomPillBar 已提升到本层最末渲染（分析页也需底栏切换），
-            // HomeScreen 不再接收 selectedTab / onTabSelect。
-            if (showHome) {
-                HomeScreen(
-                    viewModel = homeVm!!,
-                    onNew = {
-                        // Step 12 改造：FAB 不再直进表单，先走分类选择页
-                        categorySource = null
-                        preselectedCategoryId = null
-                        showCategorySelect = true
-                    },
-                    onSetting = { showSettings = true },
-                    onEdit = { showEdit = it },
-                    onBackup = { showBackup = true },
-                )
-            }
+            // ====== 底层页面（首页 / 分析页，按 tab 切换）======
+            // [Step 55] 用 AnimatedContent 做淡入 + 轻微缩放（问题 3）。
+            //
+            // 分析页只是「底层 tab」，不是 overlay，不进栈 —— 它的返回语义是
+            // 「回首页」而非「弹栈」，所以由根层 BackHandler 的第 2 分支处理。
+            // 因此 Overlay 里虽然保留了 Analysis 分支作完整枚举，实际不会入栈，
+            // 留它是为了让 Overlay 覆盖所有曾存在过的 overlay 形态，便于日后扩展。
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = {
+                    (fadeIn(animationSpec = tween(180)) +
+                            scaleIn(animationSpec = tween(180), initialScale = 0.98f))
+                        .togetherWith(fadeOut(animationSpec = tween(140)))
+                },
+                label = "rootTab",
+            ) { tab ->
+                if (showHome) {
+                    when (tab) {
+                        analysisTab -> AnalysisScreen(
+                            // 顶栏无返回箭头（4.0 设计稿形态）。
+                            // 这里只是兜底（点不到），真正的返回路径是根层 BackHandler。
+                            onClose = { selectedTab = homeTab }
+                        )
 
-            // ====== 分析页 overlay ======
-            // Step 32：顶栏无返回箭头，返回路径 = 系统返回键（BackHandler 拦截后调 onClose）
-            // 修复08：必须排在分类选择页 / 表单页之前组合，否则会盖住后开的添加流程页。
-            // showAnalysis 保持 true 即代表「来源页面是分析页」，关闭分类页后分析页自然露出。
-            if (showAnalysis) {
-                AnalysisScreen(onClose = {
-                    showAnalysis = false
-                    selectedTab = homeTab
-                })
+                        else -> HomeScreen(
+                            viewModel = homeVm!!,
+                            onNew = {
+                                // Step 12 改造：FAB 不再直进表单，先走分类选择页
+                                categorySource = null
+                                preselectedCategoryId = null
+                                openOverlay(Overlay.CategorySelect)
+                            },
+                            onSetting = { openOverlay(Overlay.Settings) },
+                            onEdit = { itemId -> openOverlay(Overlay.ItemEdit(itemId)) },
+                            onBackup = { openOverlay(Overlay.Backup) },
+                            // [Step 55] 把列表滚动状态与回顶请求接到根层
+                            onScrollStateChanged = { atTop -> homeListAtTop = atTop },
+                            scrollTopSignal = homeScrollTopSignal,
+                        )
+                    }
+                }
             }
 
             // ====== 引导页（首次启动）======
+            // 由 launchedBefore 决定，不属于 overlay 栈。
             if (showOnboarding) {
                 OnboardingScreen(
                     onStart = {
@@ -208,7 +287,7 @@ fun WujiApp() {
                         scope.launch { SettingsDataStore(context).setHasLaunchedBefore(true) }
                         categorySource = "onboarding"
                         preselectedCategoryId = null
-                        showCategorySelect = true
+                        openOverlay(Overlay.CategorySelect)
                     },
                 )
             }
@@ -218,154 +297,183 @@ fun WujiApp() {
                 AppSplash()
             }
 
-            // ====== 分类选择页 overlay（Step 12 新增）======
-            if (showCategorySelect && homeVm != null) {
-                // 从 HomeViewModel 拿全部分类数据
-                val categories by homeVm.categories
-                    .collectAsStateWithLifecycle(emptyList())
-
-                CategorySelectScreen(
-                    categories = categories,
-                    source = categorySource,
-                    onCategorySelect = { categoryId ->
-                        // 选中某个分类 → 关闭选择页 → 打开表单页（携带预选分类）
-                        preselectedCategoryId = categoryId
-                        showCategorySelect = false
-                        showAdd = true
-                    },
-                    onCustomCategory = {
-                        // 点击「添加个人专属分类」→ 打开自定义弹窗
-                        showCustomCategoryDialog = true
-                    },
-                    onDismiss = {
-                        // 修复08：仅关闭本页，不触碰 showAnalysis / selectedTab。
-                        // 来源分析页时 showAnalysis 仍为 true → 分析页露出，底栏恢复且高亮「分析」。
-                        showCategorySelect = false
-                        categorySource = null
-                        preselectedCategoryId = null
-                    },
-                )
-
-                // 自定义分类弹窗（嵌套在分类选择页内）
-                if (showCustomCategoryDialog) {
-                    CustomCategoryDialog(
-                        existingNames = categories.map { it.name },
-                        onConfirm = { trimmedName ->
-                            // 校验通过 → IO 线程写库创建分类
-                            scope.launch {
-                                val db = WujiDatabaseProvider.get(context)
-                                val newCat = CategoryEntity(
-                                    name = trimmedName,
-                                    colorKey = "custom",       // 统一灰色
-                                    isPreset = false,           // 标记用户自建
-                                    sortOrder = (categories.maxOfOrNull { it.sortOrder } ?: -1) + 1 // 永远排在末尾
+            // ====== overlay 层（栈顶渲染）======
+            // [Step 55] 改为 AnimatedContent 驱动，一次拿到退场动画与单一内容源。
+            AnimatedContent(
+                targetState = currentOverlay,
+                transitionSpec = {
+                    if (targetState?.isDialog == true) {
+                        // 弹窗类（法律条款页）：缩放 + 淡入
+                        (scaleIn(
+                            animationSpec = tween(200),
+                            initialScale = 0.9f,
+                        ) + fadeIn(animationSpec = tween(200)))
+                            .togetherWith(
+                                scaleOut(
+                                    animationSpec = tween(160),
+                                    targetScale = 0.9f,
+                                ) + fadeOut(animationSpec = tween(160))
+                            )
+                    } else {
+                        // 页面类：从右侧 1/4 位移入 + 淡入
+                        // 位移只用 1/4 而非全宽推入，让用户第一帧就看到下层页面还在
+                        (slideInHorizontally(
+                            animationSpec = tween(280),
+                        ) { it / 4 } + fadeIn(animationSpec = tween(200)))
+                            .togetherWith(
+                                slideOutHorizontally(
+                                    animationSpec = tween(240),
+                                ) { it / 4 } + fadeOut(
+                                    animationSpec = tween(160)
                                 )
-                                val newId = db.categoryDao().insert(newCat)
-                                // 创建成功 → 关闭弹窗 + 选择页 → 进表单页携带新分类 id
-                                showCustomCategoryDialog = false
-                                preselectedCategoryId = newId
-                                showCategorySelect = false
-                                showAdd = true
+                            )
+                    }
+                },
+                label = "overlay",
+            ) { overlay ->
+                when (overlay) {
+                    // 栈空时无内容可渲染。AnimatedContent 的 targetState 为 null 时
+                    // 走这一分支（退场动画结束后）。
+                    null -> Unit
+
+                    // [Step 55] 分析页已改为底层 tab（见上），不入栈。
+                    // 保留分支只为保证 when 穷尽，实际不会命中。
+                    Overlay.Analysis -> Unit
+
+                    Overlay.CategorySelect -> {
+                        if (homeVm != null) {
+                            // 从 HomeViewModel 拿全部分类数据
+                            val categories by homeVm.categories
+                                .collectAsStateWithLifecycle(emptyList())
+
+                            CategorySelectScreen(
+                                categories = categories,
+                                source = categorySource,
+                                onCategorySelect = { categoryId ->
+                                    // 选中分类 → 弹出选择页 → 压入表单（携带预选分类）
+                                    // 用栈的 replace 语义：把栈顶换成表单，避免多一层
+                                    preselectedCategoryId = categoryId
+                                    overlayStack.removeAt(overlayStack.lastIndex)
+                                    overlayStack.add(Overlay.ItemAdd(categoryId))
+                                },
+                                onCustomCategory = {
+                                    // 点击「添加个人专属分类」→ 打开自定义弹窗
+                                    showCustomCategoryDialog = true
+                                },
+                                onDismiss = {
+                                    // 仅关闭本页，不动下层。来源分析页时分析页自然露出。
+                                    popOverlay()
+                                    categorySource = null
+                                    preselectedCategoryId = null
+                                },
+                            )
+
+                            // 自定义分类弹窗（嵌套在分类选择页内）
+                            // [Step 55] AlertDialog 自带 onDismissRequest，不进栈
+                            if (showCustomCategoryDialog) {
+                                CustomCategoryDialog(
+                                    existingNames = categories.map { it.name },
+                                    onConfirm = { trimmedName ->
+                                        // 校验通过 → IO 线程写库创建分类
+                                        scope.launch {
+                                            val db = WujiDatabaseProvider.get(context)
+                                            val newCat = CategoryEntity(
+                                                name = trimmedName,
+                                                colorKey = "custom",       // 统一灰色
+                                                isPreset = false,           // 标记用户自建
+                                                sortOrder = (categories.maxOfOrNull { it.sortOrder } ?: -1) + 1 // 永远排在末尾
+                                            )
+                                            val newId = db.categoryDao().insert(newCat)
+                                            // 创建成功 → 关弹窗 + 选择页 → 进表单页携带新分类 id
+                                            showCustomCategoryDialog = false
+                                            preselectedCategoryId = newId
+                                            overlayStack.removeAt(overlayStack.lastIndex)
+                                            overlayStack.add(Overlay.ItemAdd(newId))
+                                        }
+                                    },
+                                    onDismiss = {
+                                        showCustomCategoryDialog = false
+                                    },
+                                )
                             }
-                        },
-                        onDismiss = {
-                            showCustomCategoryDialog = false
-                        },
-                    )
+                        }
+                    }
+
+                    is Overlay.ItemAdd -> {
+                        ItemEditScreen(
+                            itemId = null,
+                            initialCategoryId = overlay.preselectedCategoryId,
+                            onDone = {
+                                popOverlay()
+                                preselectedCategoryId = null
+                            },
+                        )
+                    }
+
+                    is Overlay.ItemEdit -> {
+                        ItemEditScreen(
+                            itemId = overlay.itemId,
+                            onDone = { popOverlay() },
+                        )
+                    }
+
+                    Overlay.Settings -> {
+                        SettingsScreen(
+                            onBack = { popOverlay() },
+                            onBudgetAnchor = { openOverlay(Overlay.BudgetAnchor) },
+                            onTrash = { openOverlay(Overlay.Trash) },
+                            onBackup = { openOverlay(Overlay.Backup) },
+                            onAbout = { openOverlay(Overlay.About) },
+                            onProfileEdit = { openOverlay(Overlay.ProfileEdit) },
+                        )
+                    }
+
+                    Overlay.BudgetAnchor -> {
+                        BudgetAnchorScreen(onBack = { popOverlay() })
+                    }
+
+                    Overlay.Trash -> {
+                        val db = WujiDatabaseProvider.get(context)
+                        TrashScreen(
+                            onBack = { popOverlay() },
+                            itemDao = db.itemDao(),
+                            trashDao = db.trashDao(),
+                        )
+                    }
+
+                    Overlay.Backup -> {
+                        BackupScreen(onBack = { popOverlay() })
+                    }
+
+                    Overlay.About -> {
+                        AboutScreen(onBack = { popOverlay() })
+                    }
+
+                    Overlay.ProfileEdit -> {
+                        ProfileEditScreen(onBack = { popOverlay() })
+                    }
+
+                    is Overlay.AboutLegal -> {
+                        AboutScreen(onBack = { popOverlay() }, initialLegalPage = overlay.page)
+                    }
                 }
-            }
-
-            // ====== 设置页 overlay ======
-            if (showSettings) {
-                SettingsScreen(
-                    onBack = { showSettings = false },
-                    onBudgetAnchor = { showBudgetAnchor = true },
-                    onTrash = { showTrash = true },
-                    onBackup = { showBackup = true },
-                    onAbout = { showAbout = true },
-                    onProfileEdit = { showProfileEdit = true },
-                )
-            }
-
-            // ====== 最近删除（回收站）列表页 overlay（Step 22 新增）======
-            // 叠在设置页之上：showSettings 保持 true，返回时仅关本页，设置页原样露出。
-            // daos 直接取单例（WujiDatabaseProvider.get 幂等），不依赖 homeVm 内部的局部 db。
-            if (showTrash) {
-                val db = WujiDatabaseProvider.get(context)
-                TrashScreen(
-                    onBack = { showTrash = false },
-                    itemDao = db.itemDao(),
-                    trashDao = db.trashDao(),
-                )
-            }
-
-            // ====== 数据备份（导出 / 导入）页 overlay（Step 23 新增）======
-            // 叠在设置页之上：showSettings 保持 true，返回时仅关本页，设置页原样露出。
-            // db / settings 由 BackupScreen 内部经单例取，无需在此传参。
-            if (showBackup) {
-                BackupScreen(onBack = { showBackup = false })
-            }
-
-            // ====== 关于页 overlay（Step 24 新增）======
-            // 叠在设置页之上：showSettings 保持 true，返回时仅关本页，设置页原样露出。
-            if (showAbout) {
-                AboutScreen(onBack = { showAbout = false })
-            }
-
-            // ====== 用户信息编辑页 overlay（Step 25 新增）======
-            // 叠在设置页之上：showSettings 保持 true，返回时仅关本页，设置页原样露出。
-            if (showProfileEdit) {
-                ProfileEditScreen(onBack = { showProfileEdit = false })
-            }
-
-            // ====== 预算锚点编辑子页 overlay（Step 20 新增，Step 21 增强）======
-            // 叠在设置页之上：showSettings 保持 true，返回时仅关本页，设置页原样露出。
-            // Step 21：分类月度预算直接内联在本页，无需额外 overlay。
-            if (showBudgetAnchor) {
-                BudgetAnchorScreen(onBack = { showBudgetAnchor = false })
-            }
-
-            // ====== 物品编辑/新增表单 overlay ======
-            if (showAdd) {
-                ItemEditScreen(
-                    itemId = null,
-                    initialCategoryId = preselectedCategoryId,   // Step 13 方案 A：构造参数注入预选分类
-                    onDone = {
-                        showAdd = false
-                        preselectedCategoryId = null             // 清理预选状态
-                    },
-                )
-            }
-            if (showEdit != null) {
-                ItemEditScreen(
-                    itemId = showEdit,
-                    onDone = { showEdit = null },
-                )
             }
 
             // ====== 底部悬浮导航（Step 32 修订：提升到 WujiApp 层）======
             // 首页与分析页共用同一底栏（首页 / + / 分析 三键），保证分析页也能一键切回首页。
-            // 仅当「首页或分析页激活」时显示；设置/新增/回收站等子页打开时隐藏，避免遮挡其底部内容。
-            val showBottomBar = showHome && !showSettings && !showCategorySelect &&
-                !showCustomCategoryDialog && !showBudgetAnchor && !showTrash && !showBackup &&
-                !showAbout && !showProfileEdit && !showAdd && showEdit == null
+            // 仅当「无 overlay」时显示；设置/新增/回收站等页打开时隐藏，避免遮挡其底部内容。
+            // [Step 55] 判定从「一堆 showXxx 布尔」简化为「栈是否为空」。
+            val showBottomBar = showHome && overlayStack.isEmpty()
             if (showBottomBar) {
                 // 悬浮胶囊：直接浮在页面内容上方，胶囊外区域透明，不再用不透明层遮挡下方内容。
                 BottomPillBar(
                     items = listOf(homeTab, analysisTab),
                     selected = selectedTab,
-                    onSelect = { tab ->
-                        selectedTab = tab
-                        if (tab.label == analysisTab.label) {
-                            showAnalysis = true
-                        } else {
-                            showAnalysis = false
-                        }
-                    },
+                    onSelect = { tab -> selectedTab = tab },
                     onFabClick = {
                         categorySource = null
                         preselectedCategoryId = null
-                        showCategorySelect = true
+                        openOverlay(Overlay.CategorySelect)
                     },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)

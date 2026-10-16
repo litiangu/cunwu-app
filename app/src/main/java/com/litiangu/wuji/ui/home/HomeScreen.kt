@@ -6,14 +6,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -117,6 +120,14 @@ fun HomeScreen(
     onSetting: () -> Unit = {},
     onEdit: (Long) -> Unit = {},
     onBackup: () -> Unit = {},
+    // [Step 55] 把「列表是否已在顶部」上报给根层，供返回栈判断下一步动作。
+    // 三视图各用不同的滚动容器（LazyColumn / LazyStaggeredGrid / LazyVerticalGrid），
+    // 根层拿不到 state 对象，只能由本页算出布尔值往外报。
+    onScrollStateChanged: (Boolean) -> Unit = {},
+    // [Step 55] 回顶信号。根层收到系统返回时自增，本页用 LaunchedEffect 侦听后
+    // 调各自的 animateScrollToItem(0)。比根层直接持有 state 更干净：
+    // 切换 viewMode 时 state 对象会变，信号机制不受牵连。
+    scrollTopSignal: Int = 0,
 ) {
     val items by viewModel.items.collectAsStateWithLifecycle(emptyList())
     val itemsLoaded by viewModel.itemsLoaded.collectAsStateWithLifecycle(false)
@@ -217,6 +228,48 @@ fun HomeScreen(
     val closeSwipe: () -> Unit = { if (openItemId != null) openItemId = null }
 
     val filterActive = statusFilter.isNotEmpty() || sortKey != "date" || sortOrder != "desc"
+
+    // ============================================================
+    // [Step 55] 三视图滚动状态：用于「返回回顶」与「是否在顶部」上报
+    //
+    // 三个视图用三种不同的滚动容器，各需一种 State 类型，不能共用：
+    //   DEFAULT → LazyListState            （LazyColumn）
+    //   CARD    → LazyStaggeredGridState    （LazyVerticalStaggeredGrid）
+    //   COMPACT → LazyGridState             （LazyVerticalGrid）
+    //
+    // 「是否在顶部」的判定规则：首项索引为 0 且首项偏移为 0。
+    // 只看索引不够 —— 卡片被部分滚出时索引仍是 0 但其实已经不在顶。
+    // ============================================================
+    val defaultListState = rememberLazyListState()
+    val cardStaggerState = rememberLazyStaggeredGridState()
+    val compactGridState = rememberLazyGridState()
+
+    // 当前视图对应的「是否在顶部」
+    val isAtTop = when (viewMode) {
+        HomeViewMode.DEFAULT ->
+            defaultListState.firstVisibleItemIndex == 0 &&
+                defaultListState.firstVisibleItemScrollOffset == 0
+        HomeViewMode.CARD ->
+            cardStaggerState.firstVisibleItemIndex == 0 &&
+                cardStaggerState.firstVisibleItemScrollOffset == 0
+        HomeViewMode.COMPACT ->
+            compactGridState.firstVisibleItemIndex == 0 &&
+                compactGridState.firstVisibleItemScrollOffset == 0
+    }
+
+    // 上报给根层。仅在值变化时写出，避免每帧重组。
+    LaunchedEffect(isAtTop) { onScrollStateChanged(isAtTop) }
+
+    // 根层请求回顶（系统返回时触发），按当前视图调对应的 animateScrollToItem。
+    LaunchedEffect(scrollTopSignal) {
+        if (scrollTopSignal > 0) {
+            when (viewMode) {
+                HomeViewMode.DEFAULT -> defaultListState.animateScrollToItem(0)
+                HomeViewMode.CARD -> cardStaggerState.animateScrollToItem(0)
+                HomeViewMode.COMPACT -> compactGridState.animateScrollToItem(0)
+            }
+        }
+    }
 
     val searchFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(searchActive) {
@@ -323,6 +376,7 @@ fun HomeScreen(
 
         if (viewMode == HomeViewMode.DEFAULT) {
             LazyColumn(
+                state = defaultListState,
                 modifier = listModifier,
                 contentPadding = PaddingValues(
                     start = WujiSpace.lg,
@@ -435,6 +489,7 @@ fun HomeScreen(
         } else if (viewMode == HomeViewMode.CARD) {
             // 模式 B 瀑布流（Step 43）：Adaptive(150dp) 在 360dp 屏恰好 2 列，宽屏自适应加列
             LazyVerticalStaggeredGrid(
+                state = cardStaggerState,
                 columns = StaggeredGridCells.Adaptive(ItemWaterfallLayout.columnWidth),
                 modifier = listModifier,
                 contentPadding = PaddingValues(
@@ -498,6 +553,7 @@ fun HomeScreen(
         } else {
             // 模式 C 紧凑列表：暂沿用旧 3 列等高网格（Step 44 陈列馆改造时重写此臂）
             LazyVerticalGrid(
+                state = compactGridState,
                 columns = GridCells.Fixed(3),
                 modifier = listModifier,
                 contentPadding = PaddingValues(
