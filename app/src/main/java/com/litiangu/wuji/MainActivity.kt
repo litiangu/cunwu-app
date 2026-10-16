@@ -445,16 +445,26 @@ fun WujiApp() {
                         BackupScreen(onBack = { popOverlay() })
                     }
 
-                    Overlay.About -> {
-                        AboutScreen(onBack = { popOverlay() })
+                    // [Step 58] 关于页与法律条款页共用同一个 AboutScreen，
+                    // currentLegalPage 由根层回传，页面自身不持有导航状态。
+                    // 两个分支渲染出的是同一棵composable 树，只是法律页多一层
+                    // LegalContentOverlay；AnimatedContent 会把它们视作
+                    // 同一 targetState（都是 AboutScreen 的调用）而跳过转场，
+                    // 法律页的进出场动画由内部 Box 的层级切换承担。
+                    //
+                    // 关于页：currentLegalPage 恒为 null（法律页入栈后栈顶变了）
+                    Overlay.About, is Overlay.AboutLegal -> {
+                        AboutScreen(
+                            // 法律页入栈时栈顶是 AboutLegal，弹它；
+                            // 关于页入栈时栈顶是 About，弹它。两处都指向 popOverlay。
+                            onBack = { popOverlay() },
+                            currentLegalPage = (overlay as? Overlay.AboutLegal)?.page,
+                            onOpenLegal = { page -> openOverlay(Overlay.AboutLegal(page)) },
+                        )
                     }
 
                     Overlay.ProfileEdit -> {
                         ProfileEditScreen(onBack = { popOverlay() })
-                    }
-
-                    is Overlay.AboutLegal -> {
-                        AboutScreen(onBack = { popOverlay() }, initialLegalPage = overlay.page)
                     }
                 }
             }

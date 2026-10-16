@@ -18,11 +18,6 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,32 +44,37 @@ import com.litiangu.wuji.ui.theme.WujiSpace
  * 导航沿用 MainActivity 布尔状态机（showAbout），以全屏 overlay 叠在设置页之上。
  * 版本号来自 BuildConfig.VERSION_NAME（由 build.gradle.kts 的 versionName 注入）。
  *
- * Step 27 的法律内容页以「AboutScreen 内部子 overlay」实现（本地 legalPage 状态驱动），
- * 不新增 MainActivity 全局导航布尔，保持本步单文件改动、低风险。
+ * Step 27 原本把法律内容页做成「AboutScreen 内部子 overlay」（本地 legalPage 状态驱动），
+ * 当时为的是单文件改动低风险。Step 55 / 58 已将其完全交给MainActivity 的
+ * `Overlay.AboutLegal` 导航栈，本页不再持有任何导航状态（见下方参数说明）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(
     onBack: () -> Unit = {},
     /**
-     * [Step 55] 初始法律内容页。由根层导航栈驱动（`Overlay.AboutLegal`），
-     * 传入非null 即直接叠加显示对应条款页。
+     * [Step 58] 法律内容页状态，**完全由根层导航栈驱动**。
      *
-     * 改造前这里是 AboutScreen 内部的 `legalPage` 私有状态，
-     * 根层拿不到 → 这一层无法纳入统一返回栈 → 侧滑返回时会被漏掉。
-     * 提升到根层后，侧滑 / 导航键才能正确逐层返回。
+     * [Step 55] 只做了「提升一半」：把参数加进来、内部用 `remember` 记初值、
+     * 再用 `LaunchedEffect(initialLegalPage)` 同步回去。但页面内点法律入口
+     * （用户协议 / 开源许可）时改的是**本地 `legalPage` 变量**，
+     * 根层栈里从来没压入 `Overlay.AboutLegal`，于是返回时弹掉的是
+     * `Overlay.About`，表现为「从用户协议直接跳回设置页，跳过了关于页」。
      *
-     * 保留 `remember` 是为了在根层切换 LegalPage 时内部状态能同步刷新，
-     * 不需要 key 重置整个 composable。
+     * 修法：本地状态彻底删除，进入靠回调上报根层（[onOpenLegal]），
+     * 退出也走根层的 popOverlay。根层把 `currentOverlay` 回传下来，
+     * 本页只做「显示什么」的判断，不再持有导航状态。
+     *
+     * @param currentLegalPage 根层当前展示的法律页（null = 关于主页）
+     * @param onOpenLegal 点击法律入口时上报根层入栈
      */
-    initialLegalPage: LegalPage? = null,
+    currentLegalPage: LegalPage? = null,
+    onOpenLegal: (LegalPage) -> Unit = {},
 ) {
     // 版本号直接读 BuildConfig（编译期由 build.gradle.kts versionName 注入）。
     val versionName = BuildConfig.VERSION_NAME
-    // 法律内容页状态：null = 显示关于主页；非 null = 叠加显示对应全屏内容（用户协议 / 开源许可）。
-    // [Step 55] 不再用 remember 记初值，改由根层每次重组时同步下来。
-    var legalPage by remember { mutableStateOf(initialLegalPage) }
-    LaunchedEffect(initialLegalPage) { legalPage = initialLegalPage }
+    // [Step 58] legalPage 不再是本地可变状态，直接读根层传下来的值。
+    val legalPage = currentLegalPage
 
     // 用 Box 包住主 Scaffold 与法律子 overlay，保证 overlay 在 z 轴压住主 Scaffold 顶栏。
     Box(modifier = Modifier.fillMaxSize()) {
@@ -195,16 +195,18 @@ fun AboutScreen(
                 Spacer(Modifier.height(WujiSpace.md))
 
                 // Step 27：法律与许可入口（两个可点击行）。
+                // [Step 58] 改走 onOpenLegal 上报根层入栈，本地不再直接改状态，
+                // 否则这一层不在导航栈内，返回会跳过「关于页」直接回设置页。
                 AboutLinkRow(
                     icon = Icons.Filled.Description,
                     title = "用户协议",
-                    onClick = { legalPage = LegalPage.USER_AGREEMENT },
+                    onClick = { onOpenLegal(LegalPage.USER_AGREEMENT) },
                 )
                 Spacer(Modifier.height(WujiSpace.sm))
                 AboutLinkRow(
                     icon = Icons.Filled.Code,
                     title = "开源许可",
-                    onClick = { legalPage = LegalPage.OPEN_SOURCE },
+                    onClick = { onOpenLegal(LegalPage.OPEN_SOURCE) },
                 )
 
                 Spacer(Modifier.height(WujiSpace.xl))
@@ -217,9 +219,12 @@ fun AboutScreen(
             }
         }
 
-        // Step 27：法律内容全屏子 overlay（叠加在关于主页之上，不进入全局导航状态机）。
+        // [Step 58] 法律内容子 overlay。返回走 onBack（根层弹栈），
+        // 与系统返回手势命中的是同一个 BackHandler，语义一致。
+        // 早期版本用 local `legalPage = null` 自行关闭，导致顶部箭头与侧滑
+        // 走两条不同路径，是「跳过关于页」问题的另一半来源。
         legalPage?.let { page ->
-            LegalContentOverlay(page = page, onBack = { legalPage = null })
+            LegalContentOverlay(page = page, onBack = onBack)
         }
     }
 }
