@@ -11,9 +11,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -27,8 +24,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.data.db.CategoryEntity
+import com.litiangu.wuji.ui.designsystem.WujiIcons
 import com.litiangu.wuji.ui.designsystem.categoryIcon
 import com.litiangu.wuji.ui.designsystem.categoryVisual
+import com.litiangu.wuji.ui.designsystem.cardOutlineStroke
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
 
@@ -66,7 +65,8 @@ fun CategorySelectScreen(
             // 原先只靠 Spacer(WujiSpace.xl) 目测挡着。当前机型（152px≈46.8dp 挖孔）恰好没撞上，
             // 换挖孔更高的机型标题会被啃掉，属防御性改动，视觉上与原状一致。
             .statusBarsPadding()
-            .padding(horizontal = WujiSpace.lg),
+            // 与其他一级页面统一到 20dp：主页/分析/设置的标题都落在这条线上。
+            .padding(horizontal = 20.dp),
     ) {
         // ====== 顶栏：标题 + 右上角 × 圆圈按钮（两种来源统一退出入口） ======
         Spacer(modifier = Modifier.height(WujiSpace.xl))
@@ -77,7 +77,6 @@ fun CategorySelectScreen(
             Text(
                 text = "添加新物品",
                 style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.weight(1f))
@@ -93,7 +92,7 @@ fun CategorySelectScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = WujiIcons.X,
                         contentDescription = "关闭",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp),
@@ -165,6 +164,7 @@ private fun PresetCategoryCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
         ),
+        border = cardOutlineStroke(),
         elevation = CardDefaults.cardElevation(
             defaultElevation = 1.dp,
         ),
@@ -229,6 +229,7 @@ private fun CustomCategoryCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
         ),
+        border = cardOutlineStroke(),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -280,10 +281,7 @@ private fun AddCustomEntryCard(onClick: () -> Unit) {
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
         ),
-        border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-        ),
+        border = cardOutlineStroke(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -303,7 +301,7 @@ private fun AddCustomEntryCard(onClick: () -> Unit) {
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Add,
+                        imageVector = WujiIcons.Plus,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp),

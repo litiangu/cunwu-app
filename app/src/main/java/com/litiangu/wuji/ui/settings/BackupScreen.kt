@@ -13,19 +13,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AddCircle
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.SettingsBackupRestore
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import com.litiangu.wuji.data.settings.BackupFileInfo
 import com.litiangu.wuji.data.settings.BackupRepository
@@ -48,6 +35,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import com.litiangu.wuji.data.db.WujiDatabaseProvider
 import com.litiangu.wuji.data.settings.SettingsDataStore
+import com.litiangu.wuji.ui.designsystem.WujiIcons
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
 import kotlinx.coroutines.launch
@@ -139,7 +127,7 @@ fun BackupScreen(
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(WujiIcons.ArrowLeft, contentDescription = "返回")
                     }
                 },
                 actions = {
@@ -153,7 +141,7 @@ fun BackupScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.SettingsBackupRestore,
+                            imageVector = WujiIcons.ArchiveRestore,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(22.dp),
@@ -179,7 +167,7 @@ fun BackupScreen(
             // 卡 1：备份提醒（primary 橙 = 通知/提醒语义）
             BackupCard {
                 SectionHeader(
-                    icon = Icons.Filled.NotificationsActive,
+                    icon = WujiIcons.BellRing,
                     title = "备份提醒",
                     desc = "到达阈值时首页会提示；点备份将打开本页并自动开始创建新备份。",
                     iconTint = MaterialTheme.colorScheme.primary,
@@ -232,7 +220,7 @@ fun BackupScreen(
                             onClick = { scope.launch { settings.setBackupReminderThresholdDays(d) } },
                             label = { Text("${d} 天") },
                             leadingIcon = if (threshold == d) {
-                                { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                                { Icon(WujiIcons.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
                             } else null,
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -247,7 +235,7 @@ fun BackupScreen(
             // 卡 2：本地数据备份（tertiary 灰 = 文件管理/工具语义，主操作「创建新备份」保持 primary 实心橙）
             BackupCard {
                 SectionHeader(
-                    icon = Icons.Filled.Folder,
+                    icon = WujiIcons.Folder,
                     title = "本地数据备份",
                     desc = "备份数据至手机存储。",
                     iconTint = MaterialTheme.colorScheme.tertiary,
@@ -276,7 +264,7 @@ fun BackupScreen(
                     ),
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
                 ) {
-                    Icon(Icons.Filled.AddCircle, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Icon(WujiIcons.CirclePlus, contentDescription = null, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(WujiSpace.md))
                     Text("创建新备份", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 }
@@ -315,7 +303,7 @@ fun BackupScreen(
             // 卡 3：恢复数据（secondary 中性 = 还原/恢复语义，按钮已降权为 outlineVariant 细边框）
             BackupCard {
                 SectionHeader(
-                    icon = Icons.Filled.SettingsBackupRestore,
+                    icon = WujiIcons.ArchiveRestore,
                     title = "恢复数据",
                     desc = "选择本地备份文件以恢复您的数据。",
                     iconTint = MaterialTheme.colorScheme.secondary,
@@ -333,7 +321,7 @@ fun BackupScreen(
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
                 ) {
-                    Icon(Icons.Filled.SettingsBackupRestore, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Icon(WujiIcons.ArchiveRestore, contentDescription = null, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(WujiSpace.md))
                     Text("从本地恢复数据", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 }
@@ -447,7 +435,7 @@ fun BackupScreen(
                             .background(MaterialTheme.colorScheme.error.copy(alpha = 0.1f)),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        Icon(WujiIcons.TriangleAlert, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                     }
                     Spacer(Modifier.height(8.dp))
                     Text("确定删除备份？", color = MaterialTheme.colorScheme.onSurface)
@@ -543,7 +531,7 @@ private fun BackupRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            Icons.Filled.Inventory2,
+            WujiIcons.Package,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(36.dp),
@@ -563,7 +551,7 @@ private fun BackupRow(
             },
             colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
         ) {
-            Icon(Icons.Filled.MoreVert, contentDescription = "更多操作")
+            Icon(WujiIcons.EllipsisVertical, contentDescription = "更多操作")
         }
     }
 }
@@ -628,17 +616,17 @@ private fun BackupMenuOverlay(
             Column(modifier = Modifier.fillMaxWidth()) {
                 BackupMenuItem(
                     label = "还原此备份",
-                    icon = Icons.Filled.SettingsBackupRestore,
+                    icon = WujiIcons.ArchiveRestore,
                     onClick = onRestore,
                 )
                 BackupMenuItem(
                     label = "分享文件",
-                    icon = Icons.Filled.Share,
+                    icon = WujiIcons.Share2,
                     onClick = onShare,
                 )
                 BackupMenuItem(
                     label = "保存到手机",
-                    icon = Icons.Filled.Download,
+                    icon = WujiIcons.Download,
                     onClick = onSave,
                 )
                 HorizontalDivider(
@@ -647,7 +635,7 @@ private fun BackupMenuOverlay(
                 )
                 BackupMenuItem(
                     label = "删除备份",
-                    icon = Icons.Filled.Delete,
+                    icon = WujiIcons.Trash2,
                     onClick = onDelete,
                     isError = true,
                 )

@@ -4,19 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,13 +17,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.data.db.ItemStatus
+import com.litiangu.wuji.ui.designsystem.SpringBottomSheet
+import com.litiangu.wuji.ui.designsystem.WujiIcons
 import com.litiangu.wuji.ui.theme.BrandOrange
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
 
 /**
- * 筛选与排序弹窗（ModalBottomSheet，底部上滑）。
- * 退出：下滑手势 或 点击遮罩（由 ModalBottomSheet.onDismissRequest 处理），
+ * 筛选与排序弹窗（SpringBottomSheet：弹簧从底部升起 + 遮罩渐暗 + 内容错峰入场）。
+ * 退出：下拖超 1/3 / 快速下甩 / 点击遮罩 / 系统返回，均先播关闭动画再回调 onDismiss，
  * 无右上角 × 按钮，避免冗余。
  *
  * 规则（逻辑文档《筛选与排序弹窗功能》）：
@@ -41,7 +35,6 @@ import com.litiangu.wuji.ui.theme.WujiSpace
  * - 清除：草稿重置为默认（日期降序、无状态），弹窗不关。
  * - 确定：草稿提交生效态并关弹窗。遮罩/下滑：丢弃草稿、保持原生效态。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilterSortSheet(
     currentSortKey: String,
@@ -50,7 +43,6 @@ fun FilterSortSheet(
     onApply: (key: String, order: String, status: Set<ItemStatus>) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState()
     // 草稿态：每次弹窗打开（重组）从生效态复制一份
     val draftKey = remember { mutableStateOf(currentSortKey) }
     val draftOrder = remember { mutableStateOf(currentSortOrder) }
@@ -62,9 +54,8 @@ fun FilterSortSheet(
         draftStatus.value = mutableSetOf()
     }
 
-    ModalBottomSheet(
+    SpringBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
         Column(
@@ -88,8 +79,8 @@ fun FilterSortSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(WujiSpace.sm))
-            SortKeyRow(Icons.Filled.DateRange, "日期", "date", draftKey, draftOrder)
-            SortKeyRow(Icons.Filled.AccountBalanceWallet, "金额", "price", draftKey, draftOrder)
+            SortKeyRow(WujiIcons.CalendarDays, "日期", "date", draftKey, draftOrder)
+            SortKeyRow(WujiIcons.Wallet, "金额", "price", draftKey, draftOrder)
             Spacer(Modifier.height(WujiSpace.md))
 
             // 使用状态区：使用中 / 未使用 / 已售出 1×3 胶囊按钮
@@ -115,8 +106,12 @@ fun FilterSortSheet(
                 ) { Text("清除") }
                 Button(
                     onClick = {
-                        onApply(draftKey.value, draftOrder.value, draftStatus.value.toSet())
-                        onDismiss()
+                        // 先快照草稿，关闭动画播完后再提交生效：
+                        // 提交会触发首页列表重排/重组，与关闭动画同帧会严重掉帧（见 SpringSheetScope）
+                        val key = draftKey.value
+                        val order = draftOrder.value
+                        val status = draftStatus.value.toSet()
+                        dismiss(afterClosed = { onApply(key, order, status) })
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(WujiRadius.lg),
@@ -197,7 +192,7 @@ private fun OrderIconButton(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = if (isAsc) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
+            imageVector = if (isAsc) WujiIcons.ArrowUp else WujiIcons.ArrowDown,
             contentDescription = if (isAsc) "升序" else "降序",
             tint = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp),

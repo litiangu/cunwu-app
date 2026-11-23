@@ -21,13 +21,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.ui.designsystem.categoryVisual
-import com.litiangu.wuji.ui.item.decodeImagePath
+import com.litiangu.wuji.ui.item.rememberThumbnail
 
 /**
  * 模式 C（紧凑列表）陈列馆格（Step 44），规格 §4.3 / §4.4。
@@ -60,7 +60,9 @@ fun ItemExhibitCell(
             .clickable(onClick = onClick),
     ) {
         // 图区：96×96 方图（与列宽一致），Fit 完整显示，底色承担分类识别
-        val cellBitmap = decodeImagePath(item.displayImagePath())
+        // 后台降采样解码 + 内存缓存（见 ui/item/ThumbnailLoader.kt）；格宽约 100dp，取 120dp 留余量
+        val thumb = rememberThumbnail(item.displayImagePath(), maxOf(ItemGalleryLayout.imageSize, 120.dp))
+        val cellBitmap = thumb.bitmap
         val isCutout = item.displayImagePath() == item.croppedImagePath
         // [修复19-C] 抠图态用 surfaceContainerLowest（深色模式=#0E0D0E 黑），与深色页面统一。
         // 白边贴纸在黑底上对比强（白线 vs 黑），深色主体在黑底上靠白边勾勒轮廓。
@@ -75,10 +77,12 @@ fun ItemExhibitCell(
         ) {
             if (cellBitmap != null) {
                 Image(
-                    bitmap = cellBitmap.asImageBitmap(),
+                    bitmap = cellBitmap,
                     contentDescription = item.name,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = thumb.alpha },
                 )
             } else {
                 Icon(

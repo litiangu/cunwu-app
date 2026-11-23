@@ -69,6 +69,8 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun setDarkMode(pref: DarkModePref) {
         context.dataStore.edit { it[DARK_MODE_KEY] = pref.value }
+        // 同步写一份启动缓存，供 onCreate 在 setContent 之前同步读取。
+        StartupTheme.write(context, pref)
     }
 
     suspend fun setPrivacyMode(enabled: Boolean) {

@@ -108,6 +108,7 @@ fun decodeImagePath(imagePath: String?): android.graphics.Bitmap? {
  */
 fun deleteImagePath(path: String?) {
     if (path.isNullOrBlank()) return
+    ThumbnailCache.evict(path)
     try {
         val f = File(path)
         if (f.exists()) f.delete()

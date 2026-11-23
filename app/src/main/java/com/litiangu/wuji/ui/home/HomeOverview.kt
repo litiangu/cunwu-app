@@ -1,13 +1,9 @@
 package com.litiangu.wuji.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.DonutSmall
-import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -21,6 +17,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.luminance
+import com.litiangu.wuji.ui.designsystem.WujiIcons
+import com.litiangu.wuji.ui.designsystem.cardOutlineStroke
 import com.litiangu.wuji.ui.theme.BrandOrange
 import com.litiangu.wuji.ui.theme.BrandOrangeDark
 import com.litiangu.wuji.ui.theme.TintBlueDark
@@ -67,7 +65,7 @@ fun HomeOverview(
                 modifier = Modifier.weight(1f),
                 tint = tintOrangeA,
                 iconTint = brand,
-                icon = Icons.Filled.AccountBalanceWallet,
+                icon = WujiIcons.Wallet,
                 title = "资产总额",
                 value = if (privacyMasked) PRIVACY_MASK else "¥%,.0f".format(overview.netAsset),
             )
@@ -75,7 +73,7 @@ fun HomeOverview(
                 modifier = Modifier.weight(1f),
                 tint = tintOrangeB,
                 iconTint = neutralIcon,
-                icon = Icons.Filled.Inventory2,
+                icon = WujiIcons.Package,
                 title = "物品总数",
                 value = "${overview.totalCount}",
             )
@@ -85,7 +83,7 @@ fun HomeOverview(
                 modifier = Modifier.weight(1f),
                 tint = tintBlue,
                 iconTint = accentBlue,
-                icon = Icons.Filled.DonutSmall,
+                icon = WujiIcons.ChartPie,
                 title = "使用状态",
                 value = "%.0f%%".format(overview.useRatePercent),
                 subLabel = overview.useStateLabel,
@@ -95,7 +93,7 @@ fun HomeOverview(
                 modifier = Modifier.weight(1f),
                 tint = tintGreen,
                 iconTint = healthColor(overview.healthLabel),
-                icon = Icons.Filled.HealthAndSafety,
+                icon = WujiIcons.ShieldCheck,
                 title = "消费健康",
                 value = overview.healthLabel,
                 valueColor = healthColor(overview.healthLabel),
@@ -130,6 +128,7 @@ private fun OverviewCard(
             .height(WujiSize.statCardHeight)
             .clip(RoundedCornerShape(WujiRadius.xxl))
             .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+            .border(cardOutlineStroke(), RoundedCornerShape(WujiRadius.xxl))
             .padding(WujiSpace.md),
     ) {
         // 第一行：左上图标圈 + 右上数值（副标在数值正下方）

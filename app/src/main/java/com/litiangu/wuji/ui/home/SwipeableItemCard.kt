@@ -20,9 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -40,6 +37,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.litiangu.wuji.ui.designsystem.WujiIcons
 import com.litiangu.wuji.ui.designsystem.fireHapticIfEnabled
 import com.litiangu.wuji.ui.theme.WujiRadius
 import kotlinx.coroutines.launch
@@ -148,7 +146,7 @@ fun SwipeableItemCard(
         if (density.stacked) {
             Column(modifier = actionContainer) {
                 ActionButton(
-                    icon = Icons.Filled.Edit,
+                    icon = WujiIcons.SquarePen,
                     label = "编辑",
                     iconSize = density.iconSize,
                     showLabel = density.showLabel,
@@ -159,7 +157,7 @@ fun SwipeableItemCard(
                     fillHeight = false,
                 )
                 ActionButton(
-                    icon = Icons.Filled.Delete,
+                    icon = WujiIcons.Trash2,
                     label = "删除",
                     iconSize = density.iconSize,
                     showLabel = density.showLabel,
@@ -176,7 +174,7 @@ fun SwipeableItemCard(
                 horizontalArrangement = Arrangement.End,
             ) {
                 ActionButton(
-                    icon = Icons.Filled.Edit,
+                    icon = WujiIcons.SquarePen,
                     label = "编辑",
                     iconSize = density.iconSize,
                     showLabel = density.showLabel,
@@ -186,7 +184,7 @@ fun SwipeableItemCard(
                     modifier = Modifier.weight(1f),
                 )
                 ActionButton(
-                    icon = Icons.Filled.Delete,
+                    icon = WujiIcons.Trash2,
                     label = "删除",
                     iconSize = density.iconSize,
                     showLabel = density.showLabel,

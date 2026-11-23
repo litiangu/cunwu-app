@@ -16,9 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.foundation.layout.*
@@ -43,6 +40,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.util.Calendar
 import java.util.Locale
+import com.litiangu.wuji.ui.designsystem.WujiIcons
 
 private val WEEK_HEADERS = listOf("一", "二", "三", "四", "五", "六", "日")
 
@@ -162,7 +160,7 @@ private fun DayView(
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onPrevMonth) {
-            Icon(Icons.Filled.ChevronLeft, "上个月", tint = MaterialTheme.colorScheme.onSurface)
+            Icon(WujiIcons.ChevronLeft, "上个月", tint = MaterialTheme.colorScheme.onSurface)
         }
         Text(
             text = String.format(Locale.CHINA, "%d 年 %d 月", year, month + 1),
@@ -176,7 +174,7 @@ private fun DayView(
             textAlign = TextAlign.Center
         )
         IconButton(onClick = onNextMonth) {
-            Icon(Icons.Filled.ChevronRight, "下个月", tint = MaterialTheme.colorScheme.onSurface)
+            Icon(WujiIcons.ChevronRight, "下个月", tint = MaterialTheme.colorScheme.onSurface)
         }
     }
 
@@ -323,7 +321,7 @@ private fun YearMonthView(
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onBack) {
-            Icon(Icons.Filled.ChevronLeft, "返回", tint = MaterialTheme.colorScheme.onSurface)
+            Icon(WujiIcons.ChevronLeft, "返回", tint = MaterialTheme.colorScheme.onSurface)
         }
         Text(
             "选择年月",
@@ -343,7 +341,7 @@ private fun YearMonthView(
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = { baseYear -= 12 }) {
-            Icon(Icons.Filled.ChevronLeft, "上一段", tint = MaterialTheme.colorScheme.onSurface)
+            Icon(WujiIcons.ChevronLeft, "上一段", tint = MaterialTheme.colorScheme.onSurface)
         }
         Text(
             text = String.format(Locale.CHINA, "%d - %d", baseYear, baseYear + 11),
@@ -354,7 +352,7 @@ private fun YearMonthView(
             fontWeight = FontWeight.Medium
         )
         IconButton(onClick = { baseYear += 12 }) {
-            Icon(Icons.Filled.ChevronRight, "下一段", tint = MaterialTheme.colorScheme.onSurface)
+            Icon(WujiIcons.ChevronRight, "下一段", tint = MaterialTheme.colorScheme.onSurface)
         }
     }
 

@@ -13,19 +13,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.litiangu.wuji.ui.theme.Ink
 import com.litiangu.wuji.ui.home.ItemCardRadius
 import com.litiangu.wuji.ui.home.ItemListRail
 import com.litiangu.wuji.ui.home.ItemListRow
 import com.litiangu.wuji.ui.home.ItemListThumb
 import com.litiangu.wuji.ui.home.ItemUiModel
 import com.litiangu.wuji.ui.home.PRIVACY_MASK
-import com.litiangu.wuji.ui.item.decodeImagePath
+import com.litiangu.wuji.ui.item.rememberThumbnail
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -113,7 +114,9 @@ fun TimelineRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // 缩略图：56 方图圆角 16，贴卡高（80 - 上下 12 = 56 恰好）
-            val itemBitmap = decodeImagePath(item.displayImagePath())
+            // 后台按 56dp 降采样解码 + 内存缓存（见 ui/item/ThumbnailLoader.kt），不再主线程整图解码
+            val thumb = rememberThumbnail(item.displayImagePath(), ItemListThumb.size)
+            val itemBitmap = thumb.bitmap
             // [修复19-C] 抠图态用 surfaceContainerLowest（深色模式=#0E0D0E 黑），与深色页面统一。
             // 白边贴纸在黑底上对比强，深色主体靠白边勾勒轮廓。修复11-UI 原意（避免分类色透出）由
             // 此统一黑底达成，避免在深色页面里浮一块浅灰底。
@@ -129,11 +132,13 @@ fun TimelineRow(
             ) {
                 if (itemBitmap != null) {
                     Image(
-                        bitmap = itemBitmap.asImageBitmap(),
+                        bitmap = itemBitmap,
                         contentDescription = item.name,
                         // Fit：物品完整显示不裁切（Crop 会按短边裁掉 TV/bike 等横图），空白由分类色 tint 底补齐
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = thumb.alpha },
                     )
                 } else {
                     Icon(
@@ -179,7 +184,8 @@ fun TimelineRow(
                             text = "已陪伴 ${item.companionshipDays} 天",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            // 第三档：陪伴天数属于可略过的信息，退到 tertiary 让价格与名称先被读到。
+                            color = Ink.tertiary,
                             maxLines = 1,
                         )
                     }

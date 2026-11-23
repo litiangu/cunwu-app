@@ -153,8 +153,9 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
 
     implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.material.icons.core)
-    implementation(libs.androidx.material.icons.extended)
+    // 图标体系：Lucide（ISC）以 ImageVector 形式内联在 ui/designsystem/WujiIcons.kt，
+    // 不再依赖 material-icons-core / extended。后者只为十余个扩展图标引入整套图标集，
+    // 体积与方法数都不划算。详见 docs/ICON_MIGRATION_PLAN.md。
 
     // Step8 导航
     implementation(libs.androidx.navigation.compose)

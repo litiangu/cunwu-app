@@ -1,5 +1,11 @@
 package com.litiangu.wuji.ui.home
 
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.animateBounds
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,15 +24,6 @@ import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SettingsBackupRestore
-import androidx.compose.material.icons.filled.SpaceDashboard
-import androidx.compose.material.icons.filled.ViewTimeline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -49,11 +46,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.LookaheadScope
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.data.db.CategoryEntity
@@ -62,10 +61,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.litiangu.wuji.ui.designsystem.CircleIconButton
+import com.litiangu.wuji.ui.designsystem.RootOverlay
 import com.litiangu.wuji.ui.designsystem.TimelineRow
+import com.litiangu.wuji.ui.designsystem.WujiIcons
 import com.litiangu.wuji.ui.designsystem.floatingBarBottomAvoidance
 import com.litiangu.wuji.ui.home.CategoryFilterBar
 import com.litiangu.wuji.ui.onboarding.AppSplash
+import com.litiangu.wuji.ui.designsystem.cardOutlineStroke
 import com.litiangu.wuji.ui.theme.BrandOrange
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSize
@@ -98,20 +100,32 @@ private data class TimelineEntry(val item: ItemUiModel, val isFirstOfDay: Boolea
  */
 private const val BACKUP_REMINDER_AUTO_HIDE_MS = 30_000L
 
+// 列表重排过渡（排序 / 筛选 / 分类 chip / 搜索 变化时）：
+// - 位移：弹簧，无明显回弹，约 350ms 落定，与筛选弹窗手感同源
+// - 新出现的项：稍晚 60ms 淡入，等位移先让出空位，避免与移动中的项重叠闪烁
+// - 消失的项：快速淡出 160ms
+private val ListPlacementSpec = spring(
+    dampingRatio = 0.85f,
+    stiffness = Spring.StiffnessMediumLow,
+    visibilityThreshold = IntOffset.VisibilityThreshold,
+)
+private val ListFadeInSpec = tween<Float>(durationMillis = 220, delayMillis = 60)
+private val ListFadeOutSpec = tween<Float>(durationMillis = 160)
+
 /**
  * 首页：与 `stitch_app_settings_page_redesign/3.0应用主页-显示添加物品后的页面/screen.png` 1:1 对齐。
  *
- * 顶栏：「你的物品」+ 三圆钮。
+ * 顶栏：「你的物品」+ 两圆钮（列表切换 / 搜索）。
  * - 列表切换：点击在按钮处弹出 DropdownMenu 三选项（时间轴 / 瀑布流 / 陈列馆），
  *   参考 3.5 视图切换按钮状态页面，显式选择触发 HomeViewModel.setViewMode，持久化。
  * - 搜索：点击展开内联输入框，300ms 防抖按名称模糊匹配（不区分大小写）。
  *   激活时左侧导航位空，× 取消按钮置于右侧 actions。
- * - 设置：跳设置页。
+ * - 设置：已移至底栏「设置」tab，顶栏不再放置。
  * 分类 chips + 末尾 ≡ 接筛选排序弹窗（含激活橙点）。
  * 底栏 pill（首页/+ /分析），分析 tab 由 WujiApp 接 AnalysisScreen。
  * 点击物品：弹出 ItemDetailOverlay。
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
@@ -302,8 +316,8 @@ fun HomeScreen(
                     } else {
                         Text(
                             text = "你的物品",
-                            style = MaterialTheme.typography.displaySmall,
-                            fontWeight = FontWeight.Bold,
+                            // 一级页面标题统一走 headlineLarge，与「物品分析」「设置」「添加新物品」同一档。
+                            style = MaterialTheme.typography.headlineLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                     }
@@ -314,7 +328,7 @@ fun HomeScreen(
                         // 搜索激活：左侧无 nav，× 取消按钮置于右侧 actions；与搜索框保留间距
                         Spacer(Modifier.width(WujiSpace.xs))
                         CircleIconButton(
-                            icon = Icons.Filled.Close,
+                            icon = WujiIcons.X,
                             contentDescription = "取消搜索",
                             onClick = {
                                 openItemId = null
@@ -338,16 +352,11 @@ fun HomeScreen(
                         )
                         Spacer(Modifier.width(WujiSpace.sm))
                         CircleIconButton(
-                            icon = Icons.Filled.Search,
+                            icon = WujiIcons.Search,
                             contentDescription = "搜索",
                             onClick = { openItemId = null; searchActive = true },
                         )
-                        Spacer(Modifier.width(WujiSpace.sm))
-                        CircleIconButton(
-                            icon = Icons.Filled.Settings,
-                            contentDescription = "设置",
-                            onClick = { openItemId = null; onSetting() },
-                        )
+                        // 设置入口已由底栏「设置」tab 承担，顶栏不再重复放设置按钮
                         Spacer(Modifier.width(WujiSpace.md))
                     }
                 },
@@ -441,6 +450,7 @@ fun HomeScreen(
                                 monthName = monthNameOf(entries.first().item.purchaseDate),
                                 year = yearOf(entries.first().item.purchaseDate),
                                 count = entries.size,
+                                modifier = Modifier.animateItem(fadeInSpec = ListFadeInSpec, placementSpec = ListPlacementSpec, fadeOutSpec = ListFadeOutSpec),
                             )
                         }
                         item(key = "group-$monthKey", contentType = "TimelineGroup") {
@@ -449,7 +459,7 @@ fun HomeScreen(
                             val lineColor = MaterialTheme.colorScheme.outlineVariant
                             val lineX = ItemListRail.dateWidth + ItemListRail.channelWidth / 2
                             Box(
-                                modifier = Modifier.drawBehind {
+                                modifier = Modifier.animateItem(fadeInSpec = ListFadeInSpec, placementSpec = ListPlacementSpec, fadeOutSpec = ListFadeOutSpec).drawBehind {
                                     drawLine(
                                         color = lineColor,
                                         start = Offset(lineX.toPx(), 40.dp.toPx()),
@@ -458,10 +468,17 @@ fun HomeScreen(
                                     )
                                 },
                             ) {
+                                // 组内行是普通 Column（竖线要跨行连续画，不能拆成 lazy item），
+                                // animateItem 管不到组内顺序。用 LookaheadScope + animateBounds
+                                // 让组内每行从旧位置弹簧移到新位置；key(id) 保证状态（含左滑展开）跟着物品走。
+                                LookaheadScope {
+                                val lookahead = this
                                 Column(verticalArrangement = Arrangement.spacedBy(ItemListSpacing.row)) {
                                     entries.forEach { entry ->
+                                      key(entry.item.id) {
                                         SwipeableItemCard(
                                             isOpen = openItemId == entry.item.id,
+                                            modifier = Modifier.animateBounds(lookahead),
                                             onOpenChange = { open -> openItemId = if (open) entry.item.id else null },
                                             onEdit = { onEdit(entry.item.id) },
                                             onDelete = { pendingDelete = entry.item; openItemId = null },
@@ -479,8 +496,10 @@ fun HomeScreen(
                                                 },
                                             )
                                         }
+                                      }  // key
                                     }
                                 }
+                                }  // LookaheadScope
                             }
                         }
                     }
@@ -531,6 +550,7 @@ fun HomeScreen(
                     staggeredItems(items = displayed, key = { it.id }) { item ->
                         SwipeableItemCard(
                             isOpen = openItemId == item.id,
+                            modifier = Modifier.animateItem(fadeInSpec = ListFadeInSpec, placementSpec = ListPlacementSpec, fadeOutSpec = ListFadeOutSpec),
                             onOpenChange = { open -> openItemId = if (open) item.id else null },
                             onEdit = { onEdit(item.id) },
                             onDelete = { pendingDelete = item; openItemId = null },
@@ -592,7 +612,7 @@ fun HomeScreen(
                     // 陈列馆（Step 44）：左滑 Gallery 密度（40dp 单列）+ 格级 clipToBounds，
                     // 展开卡越界部分被裁掉，不压左邻卡；圆角与陈列馆格同为 16dp
                     gridItems(items = displayed, key = { it.id }) { item ->
-                        Box(modifier = Modifier.clipToBounds()) {
+                        Box(modifier = Modifier.animateItem(fadeInSpec = ListFadeInSpec, placementSpec = ListPlacementSpec, fadeOutSpec = ListFadeOutSpec).clipToBounds()) {
                             SwipeableItemCard(
                                 isOpen = openItemId == item.id,
                                 onOpenChange = { open -> openItemId = if (open) item.id else null },
@@ -619,7 +639,10 @@ fun HomeScreen(
     }
 
     detailItem?.let { item ->
-        ItemDetailOverlay(item = item, privacyMasked = privacyMasked, onDismiss = { detailItem = null })
+        // 提升到应用根层渲染：遮罩需盖住悬浮底栏（见 designsystem/SpringSheet.kt RootOverlay）
+        RootOverlay {
+            ItemDetailOverlay(item = item, privacyMasked = privacyMasked, onDismiss = { detailItem = null })
+        }
     }
 
     // 删除二次确认（软删除，可在「设置-最近删除」30 天内找回）
@@ -671,9 +694,9 @@ fun HomeScreen(
  * 触发按钮图标跟随当前视图模式。
  */
 private fun viewModeIcon(mode: HomeViewMode): ImageVector = when (mode) {
-    HomeViewMode.DEFAULT -> Icons.Filled.ViewTimeline
-    HomeViewMode.CARD -> Icons.Filled.SpaceDashboard
-    HomeViewMode.COMPACT -> Icons.Filled.GridView
+    HomeViewMode.DEFAULT -> WujiIcons.Rows3
+    HomeViewMode.CARD -> WujiIcons.LayoutDashboard
+    HomeViewMode.COMPACT -> WujiIcons.Grid3x3
 }
 
 // [修复06] 列表底部避让悬浮胶囊底栏：胶囊 68dp + FAB 凸出 16dp + 8dp 呼吸。
@@ -738,11 +761,7 @@ private fun ViewModeMenuOverlay(
                     spotShadowColor = Color.Black.copy(alpha = 0.12f)
                 }
                 .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.98f))
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(WujiRadius.xl),
-                )
+                .border(cardOutlineStroke(), RoundedCornerShape(WujiRadius.xl))
                 .padding(8.dp),
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -843,7 +862,7 @@ private fun BackupReminderBanner(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    imageVector = Icons.Filled.SettingsBackupRestore,
+                    imageVector = WujiIcons.ArchiveRestore,
                     contentDescription = null,
                     tint = BrandOrange,
                     modifier = Modifier.size(22.dp),
@@ -862,7 +881,7 @@ private fun BackupReminderBanner(
                 modifier = Modifier.size(32.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Filled.Close,
+                    imageVector = WujiIcons.X,
                     contentDescription = "关闭今日备份提醒",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp),
@@ -902,7 +921,7 @@ private fun HomeEmptyState(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Filled.Add,
+                imageVector = WujiIcons.Plus,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(40.dp),

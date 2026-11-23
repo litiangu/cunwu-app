@@ -41,3 +41,6 @@ Thumbs.db
 # NDK
 .externalNativeBuild/
 .cxx/
+
+# 本地工作区数据（记忆 / 临时产物）
+.workbuddy/

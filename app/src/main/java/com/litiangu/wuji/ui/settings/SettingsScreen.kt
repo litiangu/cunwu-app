@@ -1,5 +1,9 @@
 package com.litiangu.wuji.ui.settings
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
@@ -8,33 +12,32 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Anchor
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SettingsBackupRestore
-import androidx.compose.material.icons.filled.SettingsBrightness
-import androidx.compose.material.icons.filled.Vibration
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,11 +46,19 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.data.settings.DarkModePref
 import com.litiangu.wuji.domain.DEFAULT_DAILY_BUDGET_ANCHOR
+import com.litiangu.wuji.ui.designsystem.cardOutlineStroke
+import com.litiangu.wuji.ui.designsystem.floatingBarBottomAvoidance
 import com.litiangu.wuji.data.settings.SettingsDataStore
 import com.litiangu.wuji.ui.designsystem.Haptics
-import com.litiangu.wuji.ui.item.decodeImagePath
+import com.litiangu.wuji.ui.designsystem.WujiIcons
+import com.litiangu.wuji.ui.designsystem.WujiSwitch
+import com.litiangu.wuji.ui.item.rememberThumbnailHolding
+import com.litiangu.wuji.ui.theme.Ink
+import com.litiangu.wuji.ui.theme.LocalThemeTransition
+import com.litiangu.wuji.ui.theme.PendingDarkMode
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 /**
@@ -75,6 +86,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit = {},
+    /** true = 作为底栏一级页面渲染：无返回箭头、标题左对齐、底部为悬浮导航留白。 */
+    asTab: Boolean = false,
     onBudgetAnchor: () -> Unit = {},
     onTrash: () -> Unit = {},
     onBackup: () -> Unit = {},
@@ -100,7 +113,23 @@ fun SettingsScreen(
         topBar = {
             // Material3 TopAppBar 默认按 status bar inset 留出顶部空间；
             // 不显式覆盖 windowInsets，避免画面贴顶与状态栏重叠。
-            CenterAlignedTopAppBar(
+            if (asTab) {
+                // 一级页面形态：左对齐标题，无返回键，与首页/分析页同一套顶栏语言。
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "设置",
+                            // 一级页面标题与其他三页同档，不再硬编码字号。
+                            style = MaterialTheme.typography.headlineLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        scrolledContainerColor = MaterialTheme.colorScheme.background,
+                    ),
+                )
+            } else CenterAlignedTopAppBar(
                 title = {
                     // headline-lg：Manrope 24sp / 600（DESIGN.md typography.headline-lg）
                     Text(
@@ -113,7 +142,7 @@ fun SettingsScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            imageVector = WujiIcons.ArrowLeft,
                             contentDescription = "返回",
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
@@ -130,7 +159,7 @@ fun SettingsScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Settings,
+                            imageVector = WujiIcons.Settings,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(22.dp),
@@ -162,7 +191,7 @@ fun SettingsScreen(
             SectionLabel("偏好")
             CardGroup {
                 SettingRow(
-                    icon = Icons.Filled.SettingsBrightness,
+                    icon = WujiIcons.MoonStar,
                     title = "深色模式",
                     trailing = {
                         ThreeChoiceDarkMode(
@@ -173,10 +202,10 @@ fun SettingsScreen(
                 )
                 RowDivider()
                 SettingRow(
-                    icon = Icons.Filled.VisibilityOff,
+                    icon = WujiIcons.EyeOff,
                     title = "隐私模式",
                     trailing = {
-                        Switch(
+                        WujiSwitch(
                             checked = privacyMode,
                             onCheckedChange = { viewModel.setPrivacyMode(it) },
                         )
@@ -184,10 +213,10 @@ fun SettingsScreen(
                 )
                 RowDivider()
                 SettingRow(
-                    icon = Icons.Filled.Vibration,
+                    icon = WujiIcons.Vibrate,
                     title = "震动反馈",
                     trailing = {
-                        Switch(
+                        WujiSwitch(
                             checked = hapticFeedback,
                             onCheckedChange = { v ->
                                 viewModel.setHapticFeedback(v)
@@ -203,14 +232,14 @@ fun SettingsScreen(
             SectionLabel("管理")
             CardGroup {
                 SettingRow(
-                    icon = Icons.Filled.DeleteOutline,
+                    icon = WujiIcons.Trash2,
                     title = "最近删除",
                     trailing = { Chevron() },
                     onClick = onTrash,
                 )
                 RowDivider()
                 SettingRow(
-                    icon = Icons.Filled.Anchor,
+                    icon = WujiIcons.Anchor,
                     title = "预算锚点",
                     trailing = {
                         // 实时显示当前值（落库后自动更新）；与 Chevron 同行。
@@ -233,7 +262,7 @@ fun SettingsScreen(
             SectionLabel("数据与账户")
             CardGroup {
                 SettingRow(
-                    icon = Icons.Filled.SettingsBackupRestore,
+                    icon = WujiIcons.ArchiveRestore,
                     title = "数据备份",
                     trailing = { Chevron() },
                     onClick = onBackup,
@@ -244,7 +273,7 @@ fun SettingsScreen(
             SectionLabel("关于")
             CardGroup {
                 SettingRow(
-                    icon = Icons.Filled.Info,
+                    icon = WujiIcons.Info,
                     title = "关于本应用",
                     trailing = { Chevron() },
                     onClick = onAbout,
@@ -253,6 +282,8 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(WujiSpace.xl))
             Spacer(Modifier.height(WujiSpace.xl))
+            // 作为 tab 时补出悬浮底栏的高度，滚到底不被胶囊压住。
+            if (asTab) Spacer(Modifier.height(floatingBarBottomAvoidance()))
         }
     }
 }
@@ -264,7 +295,8 @@ private fun ProfileSection(
     avatarPath: String,
     onEdit: () -> Unit,
 ) {
-    val avatarBitmap = remember(avatarPath) { decodeImagePath(avatarPath) }
+    // 后台降采样解码 + 内存缓存；换头像时保留旧图直到新图就绪（见 ui/item/ThumbnailLoader.kt）
+    val avatarBitmap = rememberThumbnailHolding(avatarPath.ifBlank { null }, 80.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -283,14 +315,14 @@ private fun ProfileSection(
                 if (avatarBitmap != null) {
                     // 用户自定义头像：圆形裁切展示
                     Image(
-                        bitmap = avatarBitmap.asImageBitmap(),
+                        bitmap = avatarBitmap,
                         contentDescription = "用户头像",
                         modifier = Modifier.matchParentSize().clip(CircleShape),
                         contentScale = ContentScale.Crop,
                     )
                 } else {
                     Icon(
-                        Icons.Filled.AccountCircle,
+                        WujiIcons.CircleUserRound,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(56.dp),
@@ -307,7 +339,7 @@ private fun ProfileSection(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    Icons.Filled.Edit,
+                    WujiIcons.SquarePen,
                     contentDescription = "编辑",
                     tint = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.size(14.dp),
@@ -343,7 +375,8 @@ private fun SectionLabel(text: String) {
         fontSize = 12.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = 0.05.em,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        // 第三档：分组标签只是导航，读一次就够，弱于行内标题。
+        color = Ink.tertiary,
         modifier = Modifier.padding(start = 4.dp, top = WujiSpace.xs, bottom = WujiSpace.xs),
     )
 }
@@ -361,6 +394,7 @@ private fun CardGroup(content: @Composable ColumnScope.() -> Unit) {
             ),
         shape = RoundedCornerShape(WujiRadius.cardLg),
         color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        border = cardOutlineStroke(),
         tonalElevation = 0.dp,
     ) {
         Column(content = content)
@@ -434,35 +468,180 @@ private fun RowDivider() {
 @Composable
 private fun Chevron() {
     Icon(
-        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+        WujiIcons.ChevronRight,
         contentDescription = null,
         tint = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.size(22.dp),
     )
 }
 
-/** 深色模式三档分段控件。功能权威：三档。 */
+/**
+ * 深色模式三档分段控件。功能权威：三档。
+ *
+ * 选中底色是**一块**在三档之间滑动的胶囊，而不是三块各自显隐的底色：
+ * - 位置 / 宽度：弹簧（阻尼 0.78 带一丝回弹、刚度 700），约 130ms 到位、约 270ms 落定。
+ *   分段控件距离短，比弹窗（约 400ms）更快更脆，点下去就到，又不显得生硬。
+ * - 文字颜色：200ms 渐变，与底色滑动同时进行，避免「底色还没到、字先变白」。
+ * - 底色颜色：250ms 渐变。切换浅/深色时主题 primary 会变，渐变掉换色的跳变。
+ *
+ * 交互时序：点击后底色**立即**开始滑动（本地 pending 态，不等 DataStore 回流），
+ * 点下按钮的同一帧写入偏好并启动主题圆形扩散（圆心 = 底色原位置），与底色滑动同时进行。切主题会让整个 App 重组，若与滑动同帧发生会掉帧，
+ * 滑块看起来就会「瞬移」（与筛选弹窗「确定」的问题同源）。连点时只提交最后一次。
+ * 非点击引起的变化（如首次进入页面 StateFlow 由初值跳到真实值）直接就位，不播滑动。
+ */
 @Composable
 private fun ThreeChoiceDarkMode(current: DarkModePref, onSelect: (DarkModePref) -> Unit) {
+    val options = remember {
+        listOf(
+            DarkModePref.FOLLOW_SYSTEM to "跟随",
+            DarkModePref.NO to "浅色",
+            DarkModePref.YES to "深色",
+        )
+    }
+    // 本地选中态：点击即更新，驱动滑块；偏好写入在滑动落定后
+    var pending by remember { mutableStateOf(current) }
+    // 本次变化是否来自用户点击（只有点击才播滑动）
+    var fromTap by remember { mutableStateOf(false) }
+    LaunchedEffect(current) {
+        if (!fromTap) pending = current
+    }
+    val selectedIndex = options.indexOfFirst { it.first == pending }.coerceAtLeast(0)
+
+    // 三档各自在 Row 内容区中的 x 与宽度（px），由 onPlaced 回填
+    val chipX = remember { mutableStateListOf(0f, 0f, 0f) }
+    val chipW = remember { mutableStateListOf(0f, 0f, 0f) }
+    val indicatorX = remember { Animatable(0f) }
+    // 各档的布局坐标，提交时取其在根布局中的中心作为主题圆形扩散的圆心
+    val chipCoords = remember { arrayOfNulls<LayoutCoordinates>(3) }
+    val indicatorW = remember { Animatable(0f) }
+
+    val latestOnSelect by rememberUpdatedState(onSelect)
+    val latestCurrent by rememberUpdatedState(current)
+    // 用户点选引起的主题变化才播放全局淡化过渡（见 ui/theme/Theme.kt）
+    val themeTransition = LocalThemeTransition.current
+    // 已提交过的档位：防止同一次点选重复提交 / 重复触发扩散
+    val committed = remember { arrayOfNulls<DarkModePref>(1) }
+
+    /**
+     * 底色当前中心点的根布局坐标（px）。
+     * 以任一已挂载档位为参照：档位根坐标中心 + (底色中心 x − 该档内容区中心 x)。
+     * 底色与各档都在 Row 内容区坐标系（见 drawBehind 注释），y 方向与档位同高同中心。
+     */
+    fun indicatorCenterInRoot(): Offset? {
+        if (indicatorW.value <= 0f) return null
+        val ref = chipCoords.indices.firstOrNull { chipCoords[it]?.isAttached == true } ?: return null
+        val refCenter = chipCoords[ref]!!.boundsInRoot().center
+        val indicatorCenterX = indicatorX.value + indicatorW.value / 2f
+        val refCenterX = chipX[ref] + chipW[ref] / 2f
+        return refCenter + Offset(indicatorCenterX - refCenterX, 0f)
+    }
+
+    // 提交偏好 + 启动圆形扩散。时机 = **点下按钮的同一帧**，与底色滑动同时开始，零等待。
+    // 圆心 = 底色**当前所在位置**的中心（点击瞬间，即原档；连点时为滑动中的实际位置）：
+    // 旧主题截图里的底色正好处在圆心，扩散第一帧就被挖掉，不会残留「旧底色」；
+    // 新主题层的底色从圆心出发滑向目标档，始终在扩散圆之内。
+    fun commit(index: Int) {
+        val picked = options[index].first
+        if (committed[0] == picked) return
+        committed[0] = picked
+        if (picked != latestCurrent) {
+            val origin = indicatorCenterInRoot()
+            themeTransition.animateNextChange(origin = origin)
+            // 先乐观生效主题（不等 DataStore 落盘回流，省掉 IO 往返），再持久化
+            PendingDarkMode.pref = picked
+            latestOnSelect(picked)
+        }
+    }
+
+    val targetX = chipX[selectedIndex]
+    val targetW = chipW[selectedIndex]
+    LaunchedEffect(selectedIndex, targetX, targetW) {
+        if (targetW <= 0f) return@LaunchedEffect // 尚未测量
+        if (!fromTap || indicatorW.value <= 0f) {
+            indicatorX.snapTo(targetX)
+            indicatorW.snapTo(targetW)
+            return@LaunchedEffect
+        }
+        // 偏好已在点击时提交（见 commit），这里只负责底色滑动
+        coroutineScope {
+            launch { indicatorX.animateTo(targetX, SegmentSpring) }
+            launch { indicatorW.animateTo(targetW, SegmentSpring) }
+        }
+        fromTap = false
+    }
+
+    val indicatorColor by animateColorAsState(
+        targetValue = MaterialTheme.colorScheme.primary,
+        animationSpec = tween(250),
+        label = "segmentIndicator",
+    )
+
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(2.dp),
+            .padding(2.dp)
+            // 放在 padding 之后：绘制坐标系 = 内容区，与各档 positionInParent 同一坐标系
+            .drawBehind {
+                val w = indicatorW.value
+                if (w > 0f) {
+                    drawRoundRect(
+                        color = indicatorColor,
+                        topLeft = Offset(indicatorX.value, 0f),
+                        size = Size(w, size.height),
+                        cornerRadius = CornerRadius(18.dp.toPx()),
+                    )
+                }
+            },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ChoiceChip3("跟随", current == DarkModePref.FOLLOW_SYSTEM) { onSelect(DarkModePref.FOLLOW_SYSTEM) }
-        ChoiceChip3("浅色", current == DarkModePref.NO) { onSelect(DarkModePref.NO) }
-        ChoiceChip3("深色", current == DarkModePref.YES) { onSelect(DarkModePref.YES) }
+        options.forEachIndexed { i, (pref, label) ->
+            ChoiceChip3(
+                label = label,
+                selected = i == selectedIndex,
+                onClick = {
+                    if (pref != pending) {
+                        fromTap = true
+                        committed[0] = null
+                        pending = pref
+                        commit(i)
+                    }
+                },
+                modifier = Modifier.onPlaced { coords ->
+                    chipCoords[i] = coords
+                    val x = coords.positionInParent().x
+                    val w = coords.size.width.toFloat()
+                    if (chipX[i] != x) chipX[i] = x
+                    if (chipW[i] != w) chipW[i] = w
+                },
+            )
+        }
     }
 }
 
+// 分段滑块弹簧。visibilityThreshold 0.5px：亚像素尾巴不计入，落定判定更干脆，偏好提交不被拖延
+private val SegmentSpring = spring(
+    dampingRatio = 0.78f,
+    stiffness = 700f,
+    visibilityThreshold = 0.5f,
+)
+
 @Composable
-private fun ChoiceChip3(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun ChoiceChip3(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val textColor by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(200),
+        label = "segmentText",
+    )
     Box(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(18.dp))
-            .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+            // 底色由父级滑块统一绘制，这里只保留点击（涟漪按 18dp 胶囊裁剪）
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
@@ -472,7 +651,7 @@ private fun ChoiceChip3(label: String, selected: Boolean, onClick: () -> Unit) {
             text = label,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
-            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = textColor,
         )
     }
 }

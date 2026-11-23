@@ -1,6 +1,8 @@
 package com.litiangu.wuji.ui.theme
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -50,23 +52,26 @@ val TertiaryDark = Color(0xFFEFB8C8)
 val OnTertiaryDark = Color(0xFFFFFFFF)
 val TertiaryContainerDark = Color(0xFF633B48)
 val OnTertiaryContainerDark = Color(0xFFFBD8E3)
-val BackgroundDark = Color(0xFF121212)
+// 深色层级：画布压到近黑，卡片比画布亮 18 级，再往上逐级 +6 / +6 / +10 / +10。
+// 层级方向必须是「越靠前景越亮」。早先 surfaceContainerLowest 取 0xFF0E0D0E，
+// 比背景 0xFF121212 还暗，卡片在深色下看起来是凹陷的，整页糊成一块黑。
+val BackgroundDark = Color(0xFF0A0A0C)
 val OnBackgroundDark = Color(0xFFE6E1E5)
-val SurfaceDark = Color(0xFF121212)
+val SurfaceDark = Color(0xFF0A0A0C)
 val OnSurfaceDark = Color(0xFFE6E1E5)
-val SurfaceVariantDark = Color(0xFF49454F)
-val OnSurfaceVariantDark = Color(0xFFCAC4D0)
-val SurfaceContainerLowestDark = Color(0xFF0E0D0E)
-val SurfaceContainerLowDark = Color(0xFF151319)
-val SurfaceContainerDark = Color(0xFF1B1A1F)
-val SurfaceContainerHighDark = Color(0xFF25282C)
-val SurfaceContainerHighestDark = Color(0xFF2C2F33)
+val SurfaceVariantDark = Color(0xFF3C3C42)
+val OnSurfaceVariantDark = Color(0xFFA8A8B0)
+val SurfaceContainerLowestDark = Color(0xFF1C1C1F)
+val SurfaceContainerLowDark = Color(0xFF222226)
+val SurfaceContainerDark = Color(0xFF28282C)
+val SurfaceContainerHighDark = Color(0xFF323236)
+val SurfaceContainerHighestDark = Color(0xFF3C3C41)
 val ErrorDark = Color(0xFFF2B8B5)
 val OnErrorDark = Color(0xFFFFFFFF)
 val ErrorContainerDark = Color(0xFF8C1D18)
 val OnErrorContainerDark = Color(0xFFF9DEDC)
 val OutlineDark = Color(0xFF938F99)
-val OutlineVariantDark = Color(0xFF49454F)
+val OutlineVariantDark = Color(0xFF3E3E44)
 // endregion
 
 // Tints
@@ -188,3 +193,21 @@ object WujiSize {
     val bottomBarFabProtrude = 16.dp   // Step 34 中央 + 按钮凸出胶囊顶部的高度
 }
 
+
+/**
+ * 文字三档。
+ *
+ * primary 是看一眼就要读到的内容；secondary 是补充（副标题、说明）；
+ * tertiary 是几乎可以略过的信息（计数、时间戳、图表轴标签）。
+ * 只有两档时，次要与次次要会挤在同一层，长页面读起来没有节奏。
+ */
+object Ink {
+    val primary: Color
+        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onSurface
+
+    val secondary: Color
+        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onSurfaceVariant
+
+    val tertiary: Color
+        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+}

@@ -8,14 +8,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -30,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import com.litiangu.wuji.BuildConfig
 import com.litiangu.wuji.ui.LegalPage
 import com.litiangu.wuji.R
+import com.litiangu.wuji.ui.designsystem.WujiIcons
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
 
@@ -102,7 +95,7 @@ fun AboutScreen(
                                 contentColor = MaterialTheme.colorScheme.onSurface,
                             ),
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                            Icon(WujiIcons.ArrowLeft, contentDescription = "返回")
                         }
                     },
                     actions = {
@@ -116,7 +109,7 @@ fun AboutScreen(
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                imageVector = Icons.Filled.Info,
+                                imageVector = WujiIcons.Info,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(22.dp),
@@ -175,7 +168,7 @@ fun AboutScreen(
                 // 卡 1：关于存物（一句话定位）。
                 AboutCard {
                     AboutStatement(
-                        icon = Icons.Filled.Inventory2,
+                        icon = WujiIcons.Package,
                         title = "关于存物",
                         body = "本地物品管理，以健康分呈现物品的使用与性价比。",
                     )
@@ -186,7 +179,7 @@ fun AboutScreen(
                 // 卡 2：数据隐私声明。
                 AboutCard {
                     AboutStatement(
-                        icon = Icons.Filled.Lock,
+                        icon = WujiIcons.Lock,
                         title = "数据隐私",
                         body = "所有数据仅保存在本机，不会上传。",
                     )
@@ -198,13 +191,13 @@ fun AboutScreen(
                 // [Step 58] 改走 onOpenLegal 上报根层入栈，本地不再直接改状态，
                 // 否则这一层不在导航栈内，返回会跳过「关于页」直接回设置页。
                 AboutLinkRow(
-                    icon = Icons.Filled.Description,
+                    icon = WujiIcons.FileText,
                     title = "用户协议",
                     onClick = { onOpenLegal(LegalPage.USER_AGREEMENT) },
                 )
                 Spacer(Modifier.height(WujiSpace.sm))
                 AboutLinkRow(
-                    icon = Icons.Filled.Code,
+                    icon = WujiIcons.Code,
                     title = "开源许可",
                     onClick = { onOpenLegal(LegalPage.OPEN_SOURCE) },
                 )
@@ -263,7 +256,7 @@ private fun LegalContentOverlay(
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(WujiIcons.ArrowLeft, contentDescription = "返回")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -306,7 +299,7 @@ private fun UserAgreementContent() {
     Spacer(Modifier.height(WujiSpace.lg))
 }
 
-/** 开源许可：第三方库与许可证清单（与 app/build.gradle.kts 实际依赖一致，统一 Apache License 2.0）。 */
+/** 开源许可：第三方库与许可证清单（与 app/build.gradle.kts 实际依赖一致）。 */
 @Composable
 private fun OpenSourceContent() {
     val libs = listOf(
@@ -316,7 +309,7 @@ private fun OpenSourceContent() {
         "AndroidX Lifecycle" to "Google · Apache License 2.0",
         "Room" to "Google · Apache License 2.0",
         "DataStore" to "Google · Apache License 2.0",
-        "Material Icons" to "Google · Apache License 2.0",
+        "Lucide Icons" to "Lucide Contributors · ISC License",
         "Navigation Compose" to "Google · Apache License 2.0",
         "LiteRT（ormbg 智能抠图推理）" to "Google · Apache License 2.0",
         "kotlinx.serialization" to "JetBrains · Apache License 2.0",
@@ -333,7 +326,8 @@ private fun OpenSourceContent() {
     }
     Spacer(Modifier.height(WujiSpace.md))
     Text(
-        "本应用所使用的开源组件均基于 Apache License 2.0 发布。完整许可文本见 https://www.apache.org/licenses/LICENSE-2.0",
+        "本应用的开源组件以 Apache License 2.0 为主，图标使用 Lucide Icons（ISC License）。" +
+            "完整文本见 https://www.apache.org/licenses/LICENSE-2.0 与 https://lucide.dev/license",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         lineHeight = 20.sp,
@@ -421,7 +415,7 @@ private fun AboutLinkRow(
                 modifier = Modifier.weight(1f),
             )
             Icon(
-                imageVector = Icons.Filled.ChevronRight,
+                imageVector = WujiIcons.ChevronRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp),

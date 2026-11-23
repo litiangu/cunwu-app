@@ -7,12 +7,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,8 +27,10 @@ import com.litiangu.wuji.data.db.ItemDao
 import com.litiangu.wuji.data.db.TrashDao
 import com.litiangu.wuji.data.db.TrashEntity
 import com.litiangu.wuji.data.db.TrashRepository
+import com.litiangu.wuji.ui.designsystem.WujiIcons
 import com.litiangu.wuji.ui.designsystem.categoryVisual
-import com.litiangu.wuji.ui.item.decodeImagePath
+import com.litiangu.wuji.ui.item.rememberThumbnail
+import androidx.compose.ui.graphics.graphicsLayer
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
 import java.text.SimpleDateFormat
@@ -95,7 +91,7 @@ fun TrashScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            imageVector = WujiIcons.ArrowLeft,
                             contentDescription = "返回",
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
@@ -113,7 +109,7 @@ fun TrashScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.DeleteOutline,
+                            imageVector = WujiIcons.Trash2,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(22.dp),
@@ -181,7 +177,7 @@ fun TrashScreen(
                     ),
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Delete,
+                        imageVector = WujiIcons.Trash2,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
@@ -255,7 +251,7 @@ private fun EmptyTrash() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
-                imageVector = Icons.Filled.DeleteOutline,
+                imageVector = WujiIcons.Trash2,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(48.dp),
@@ -283,7 +279,9 @@ private fun TrashRow(
     onDelete: () -> Unit,
 ) {
     val visual = categoryVisual(colorKey)
-    val bitmap = decodeImagePath(entity.imagePath ?: entity.croppedImagePath)
+    // 后台按 56dp 降采样解码 + 内存缓存（见 ui/item/ThumbnailLoader.kt）
+    val thumb = rememberThumbnail(entity.imagePath ?: entity.croppedImagePath, 56.dp)
+    val bitmap = thumb.bitmap
     // Step 30：固定 30 天清理，算剩余天数（删于 deletedAt，过 30 天清理）。
     val remainingText = run {
         val remain = ((entity.deletedAt + 30 * DAY_MS - System.currentTimeMillis()) / DAY_MS).toInt()
@@ -312,9 +310,12 @@ private fun TrashRow(
             ) {
                 if (bitmap != null) {
                     Image(
-                        bitmap = bitmap.asImageBitmap(),
+                        bitmap = bitmap,
                         contentDescription = entity.name,
-                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape)
+                            .graphicsLayer { alpha = thumb.alpha },
                         contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                     )
                 } else {
@@ -361,7 +362,7 @@ private fun TrashRow(
             Column(horizontalAlignment = Alignment.End) {
                 TextButton(onClick = onRestore) {
                     Icon(
-                        imageVector = Icons.Filled.Restore,
+                        imageVector = WujiIcons.RotateCcw,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
                     )
@@ -375,7 +376,7 @@ private fun TrashRow(
                     ),
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.DeleteOutline,
+                        imageVector = WujiIcons.Trash2,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
                     )
@@ -411,7 +412,7 @@ private fun AutoPurgeNotice(days: Int = 30) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = Icons.Filled.Schedule,
+                imageVector = WujiIcons.Clock,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),

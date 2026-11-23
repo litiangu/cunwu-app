@@ -1,13 +1,5 @@
 package com.litiangu.wuji.ui.designsystem
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Category
-import androidx.compose.material.icons.filled.Chair
-import androidx.compose.material.icons.filled.Devices
-import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.FitnessCenter
-import androidx.compose.material.icons.filled.Kitchen
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -43,15 +35,20 @@ data class CategoryVisual(
     val background: Color
 )
 
-/** colorKey → 图标。与 Room 种子数据的 6 个预置分类一一对应。 */
+/**
+ * colorKey → 图标。与 Room 种子数据的 6 个预置分类一一对应。
+ *
+ * 线宽统一 2.0：Lucide 的描边比例由 strokeWidth / viewport 决定，图标放大时
+ * 比例不变，视觉重量与 24dp 场景一致，因此不需要为大尺寸单独做变体。
+ */
 fun categoryIcon(colorKey: String?): ImageVector = when (colorKey) {
-    "digital" -> Icons.Filled.Devices
-    "appliance" -> Icons.Filled.Kitchen
-    "furniture" -> Icons.Filled.Chair
-    "tool" -> Icons.Filled.Build
-    "traffic" -> Icons.Filled.DirectionsCar
-    "sport" -> Icons.Filled.FitnessCenter
-    else -> Icons.Filled.Category   // 自定义分类与未分类共用
+    "digital" -> WujiIcons.TabletSmartphone
+    "appliance" -> WujiIcons.Refrigerator
+    "furniture" -> WujiIcons.Armchair
+    "tool" -> WujiIcons.Wrench
+    "traffic" -> WujiIcons.Car
+    "sport" -> WujiIcons.Dumbbell
+    else -> WujiIcons.Shapes   // 自定义分类与未分类共用
 }
 
 /**

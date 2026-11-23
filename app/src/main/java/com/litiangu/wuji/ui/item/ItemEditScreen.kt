@@ -29,18 +29,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AddAPhoto
-import androidx.compose.material.icons.filled.AddCircle
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.AutoFixHigh
-import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -74,6 +62,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import com.litiangu.wuji.ui.designsystem.WujiIcons
 import com.litiangu.wuji.ui.designsystem.fireHapticIfEnabled
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -230,7 +219,7 @@ fun ItemEditScreen(
                     title = { Text(uploadTitle, style = MaterialTheme.typography.headlineSmall) },
                     navigationIcon = {
                         IconButton(onClick = { showImageUpload = false }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                            Icon(WujiIcons.ArrowLeft, contentDescription = "返回")
                         }
                     }
                 )
@@ -239,7 +228,7 @@ fun ItemEditScreen(
                     title = { Text(title, style = MaterialTheme.typography.headlineSmall) },
                     navigationIcon = {
                         IconButton(onClick = { requestClose() }) {   // Step 14：走放弃保护
-                            Icon(Icons.Filled.Close, contentDescription = "关闭")
+                            Icon(WujiIcons.X, contentDescription = "关闭")
                         }
                     },
                     actions = {
@@ -285,7 +274,7 @@ fun ItemEditScreen(
                             onClick = { showCustomDialog = true },
                             label = { Text("+ 自定义") },
                             leadingIcon = {
-                                Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
+                                Icon(WujiIcons.Plus, null, modifier = Modifier.size(18.dp))
                             },
                             colors = AssistChipDefaults.assistChipColors(
                                 containerColor = tintOrange,
@@ -403,7 +392,7 @@ fun ItemEditScreen(
                                     )
                                     Spacer(Modifier.width(8.dp))
                                     Icon(
-                                        Icons.Filled.CalendarToday,
+                                        WujiIcons.Calendar,
                                         contentDescription = "选择购买日期",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(20.dp)
@@ -460,7 +449,7 @@ fun ItemEditScreen(
                                     contentColor = MaterialTheme.colorScheme.primary
                                 )
                             ) {
-                                Icon(Icons.Filled.AddCircle, null)
+                                Icon(WujiIcons.CirclePlus, null)
                             }
                         }
                         Spacer(Modifier.height(8.dp))
@@ -502,7 +491,7 @@ fun ItemEditScreen(
                                     contentColor = MaterialTheme.colorScheme.primary
                                 )
                             ) {
-                                Icon(Icons.Filled.AddCircle, null)
+                                Icon(WujiIcons.CirclePlus, null)
                             }
                         }
                         Spacer(Modifier.height(8.dp))
@@ -660,7 +649,8 @@ private fun ImagePlaceholder(
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center
     ) {
-        val bitmap = decodeImagePath(imagePath)
+        // 后台降采样解码 + 内存缓存；换图时保留上一张直到新图就绪，不闪占位（见 ThumbnailLoader.kt）
+        val bitmap = rememberThumbnailHolding(imagePath, 80.dp)
         Box(
             modifier = Modifier
                 .size(80.dp)
@@ -680,7 +670,7 @@ private fun ImagePlaceholder(
             if (bitmap != null) {
                 // 已选图片：显示圆角裁剪后的图片
                 Image(
-                    bitmap = bitmap.asImageBitmap(),
+                    bitmap = bitmap,
                     contentDescription = "物品图片",
                     modifier = Modifier
                         .matchParentSize()
@@ -706,7 +696,7 @@ private fun ImagePlaceholder(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Filled.AddAPhoto,
+                    WujiIcons.ImagePlus,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(14.dp)
@@ -761,7 +751,9 @@ private fun ImageUploadScreen(
     } else {
         viewModel.imagePath
     }
-    val previewBitmap = decodeImagePath(previewPath)
+    // 预览区约 312×240dp：按 480dp 长边解码已足够清晰。
+    // 原图 ↔ 抠图切换时保留上一张直到新图就绪，不会先闪回「未选图」占位。
+    val previewBitmap = rememberThumbnailHolding(previewPath, 480.dp)
 
     Column(
         modifier = Modifier
@@ -798,7 +790,7 @@ private fun ImageUploadScreen(
                         if (previewBitmap != null) {
                             // 已选图片：完整显示（透明 PNG 透出容器底，呈贴纸效果）
                             Image(
-                                bitmap = previewBitmap.asImageBitmap(),
+                                bitmap = previewBitmap,
                                 contentDescription = "图片预览",
                                 modifier = Modifier.matchParentSize(),
                                 contentScale = androidx.compose.ui.layout.ContentScale.Fit
@@ -833,7 +825,7 @@ private fun ImageUploadScreen(
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     UploadOptionCard(
-                        icon = Icons.Filled.CameraAlt,
+                        icon = WujiIcons.Camera,
                         label = "拍照",
                         iconTint = brand,
                         circleBg = tintOrange.copy(alpha = 0.15f),
@@ -841,7 +833,7 @@ private fun ImageUploadScreen(
                         modifier = Modifier.weight(1f)
                     )
                     UploadOptionCard(
-                        icon = Icons.Filled.PhotoLibrary,
+                        icon = WujiIcons.Images,
                         label = "相册",
                         iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
                         circleBg = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -965,7 +957,7 @@ private fun CutoutEntryCard(onClick: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Filled.AutoFixHigh,
+                    WujiIcons.WandSparkles,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(24.dp)
@@ -986,7 +978,7 @@ private fun CutoutEntryCard(onClick: () -> Unit) {
                 )
             }
             Icon(
-                Icons.Filled.ChevronRight,
+                WujiIcons.ChevronRight,
                 contentDescription = null,
                 tint = brand.copy(alpha = 0.6f)
             )
@@ -1155,7 +1147,7 @@ private fun LabeledInputRow(
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
-                            Icons.Filled.Close,
+                            WujiIcons.X,
                             null,
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
@@ -1229,7 +1221,7 @@ private fun SwipeableMoneyRow(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Filled.Close,
+                imageVector = WujiIcons.X,
                 contentDescription = "删除",
                 tint = MaterialTheme.colorScheme.onError,
                 modifier = Modifier.size(24.dp),
@@ -1378,7 +1370,7 @@ private fun AddMoneyItemDialog(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Check,
+                        imageVector = WujiIcons.Check,
                         contentDescription = "确认",
                         tint = Color.White,
                         modifier = Modifier.size(22.dp),

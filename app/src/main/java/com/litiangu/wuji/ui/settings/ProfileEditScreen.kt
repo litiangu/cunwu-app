@@ -12,11 +12,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,8 +31,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.litiangu.wuji.data.settings.UserProfileRepository
+import com.litiangu.wuji.ui.designsystem.WujiIcons
 import com.litiangu.wuji.ui.designsystem.fireHapticIfEnabled
-import com.litiangu.wuji.ui.item.decodeImagePath
+import com.litiangu.wuji.ui.item.rememberThumbnailHolding
 import com.litiangu.wuji.ui.item.deleteImagePath
 import com.litiangu.wuji.ui.item.saveImageFromFile
 import com.litiangu.wuji.ui.item.saveImageFromUri
@@ -105,7 +101,8 @@ fun ProfileEditScreen(onBack: () -> Unit = {}) {
         }
     }
 
-    val avatarBitmap: Bitmap? = remember(avatarPath) { decodeImagePath(avatarPath) }
+    // 后台降采样解码 + 内存缓存；换头像时保留旧图直到新图就绪（见 ui/item/ThumbnailLoader.kt）
+    val avatarBitmap = rememberThumbnailHolding(avatarPath.ifBlank { null }, 160.dp)
     val canSave = nickname.isNotBlank() && !saving
 
     Scaffold(
@@ -127,7 +124,7 @@ fun ProfileEditScreen(onBack: () -> Unit = {}) {
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(WujiIcons.ArrowLeft, contentDescription = "返回")
                     }
                 },
                 actions = {
@@ -140,7 +137,7 @@ fun ProfileEditScreen(onBack: () -> Unit = {}) {
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.AccountCircle,
+                            imageVector = WujiIcons.CircleUserRound,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(22.dp),
@@ -188,14 +185,14 @@ fun ProfileEditScreen(onBack: () -> Unit = {}) {
                         ) {
                             if (avatarBitmap != null) {
                                 Image(
-                                    bitmap = avatarBitmap.asImageBitmap(),
+                                    bitmap = avatarBitmap,
                                     contentDescription = "头像预览",
                                     modifier = Modifier.matchParentSize().clip(CircleShape),
                                     contentScale = ContentScale.Crop,
                                 )
                             } else {
                                 Icon(
-                                    Icons.Filled.AccountCircle,
+                                    WujiIcons.CircleUserRound,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(64.dp),
@@ -225,7 +222,7 @@ fun ProfileEditScreen(onBack: () -> Unit = {}) {
                                     contentColor = MaterialTheme.colorScheme.onSurface,
                                 ),
                             ) {
-                                Icon(Icons.Filled.CameraAlt, null, modifier = Modifier.size(18.dp))
+                                Icon(WujiIcons.Camera, null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(WujiSpace.xs))
                                 Text("拍照")
                             }
@@ -236,7 +233,7 @@ fun ProfileEditScreen(onBack: () -> Unit = {}) {
                                     contentColor = MaterialTheme.colorScheme.onSurface,
                                 ),
                             ) {
-                                Icon(Icons.Filled.PhotoLibrary, null, modifier = Modifier.size(18.dp))
+                                Icon(WujiIcons.Images, null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(WujiSpace.xs))
                                 Text("相册")
                             }

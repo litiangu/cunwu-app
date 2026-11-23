@@ -35,16 +35,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.BrokenImage
-import androidx.compose.material.icons.filled.Circle
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -87,11 +77,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.TextUnit   // Step 51：金额自适应字号
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.domain.DIMENSION_WEIGHTS
+import com.litiangu.wuji.ui.designsystem.WujiIcons
 import com.litiangu.wuji.ui.designsystem.categoryDotColor
 import com.litiangu.wuji.ui.designsystem.fireHapticIfEnabled
 import com.litiangu.wuji.ui.designsystem.floatingBarBottomAvoidance
 import com.litiangu.wuji.ui.home.PRIVACY_MASK
-import com.litiangu.wuji.ui.item.decodeImagePath
+import com.litiangu.wuji.ui.item.rememberThumbnail
+import com.litiangu.wuji.ui.designsystem.cardOutlineStroke
 import com.litiangu.wuji.ui.theme.CategoryApplianceDark
 import com.litiangu.wuji.ui.theme.CategoryCustomDark
 import com.litiangu.wuji.ui.theme.CategoryDigitalDark
@@ -122,7 +114,14 @@ import kotlinx.coroutines.launch
  * 现在页脚自行用 bottomBarInsetDp() + 胶囊高 + FAB 凸出 + 呼吸 计算避让，与首页口径一致。
  */
 @Composable
-fun AnalysisScreen(onClose: () -> Unit = {}) {
+fun AnalysisScreen(
+    onClose: () -> Unit = {},
+    /**
+     * 页面当前是否正被用户看到（底栏 tab 常驻组合后，本页隐藏时仍在组合中）。
+     * false 时不拦截返回键、不触发「进入即重读」。默认 true 兼容单独使用。
+     */
+    isActive: Boolean = true,
+) {
     // 数据经 AnalysisRepository 预热缓存（WujiApplication 启动时同步读入），VM 仅透传 StateFlow
     val viewModel = remember { AnalysisViewModel() }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -130,7 +129,7 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
     val privacyMasked by viewModel.privacyMode.collectAsStateWithLifecycle()
 
     // 顶栏无返回箭头（4.0 设计稿形态），返回路径 = 系统返回键（Step 32 决策 A）
-    BackHandler(onBack = onClose)
+    BackHandler(enabled = isActive, onBack = onClose)
 
     // 刷新按钮（Step 35 功能化）：每次点击图标转一整圈（600ms），并行触发强制重读
     val context = LocalContext.current
@@ -151,7 +150,8 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
     // 实测案例：徽章显示 5 件时 DB 已是 6 行（新增/恢复写入后订阅未驱动刷新），
     // 重启预热才复原。每次进入页强制重读一次（本地计算 <5ms），彻底消除滞留，
     // 对齐逻辑设计文档 §2.1「进入分析页（Tab 切换）→ 重新读取计算」的原始定义。
-    LaunchedEffect(Unit) { viewModel.refresh() }
+    // tab 常驻组合后改为按「变为可见」触发：切到本页、或从上层页面（如新增物品）返回本页时都重读一次。
+    LaunchedEffect(isActive) { if (isActive) viewModel.refresh() }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -171,13 +171,15 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                    // 与主页/设置共用 TopAppBar 的定位：起始 16dp、标题带 8dp 上边距，
+                    // 三页标题的基线与左边界才会落在同一条线上（实测差 21px / 10px）。
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     "物品分析",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
+                    // 与首页、设置、添加页统一到 headlineLarge（32 Bold）。
+                    style = MaterialTheme.typography.headlineLarge,
                     modifier = Modifier.weight(1f),
                 )
                 // 刷新按钮（Step 35 功能化）：轻震 + 转一圈 + 强制重读五源重建 UiState
@@ -188,7 +190,7 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
                     viewModel.refresh()
                 }) {
                     Icon(
-                        Icons.Filled.Refresh,
+                        WujiIcons.RefreshCw,
                         "刷新",
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.graphicsLayer { rotationZ = refreshRotation },
@@ -259,7 +261,7 @@ fun AnalysisScreen(onClose: () -> Unit = {}) {
                 horizontalArrangement = Arrangement.Center,
             ) {
                 Icon(
-                    Icons.Filled.Lock,
+                    WujiIcons.Lock,
                     null,
                     tint = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.size(12.dp),
@@ -296,6 +298,7 @@ private fun AnalysisCardBox(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
         ),
+        border = cardOutlineStroke(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(modifier = Modifier.padding(contentPadding)) { content() }   // 设计稿卡内 padding 24dp
@@ -419,11 +422,13 @@ private fun HealthCard(state: AnalysisUiState) {
             // 行动出口（最弱维度提示）
             if (state.weakestHint.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.Circle,
-                        null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(6.dp),
+                    // 6dp 实心圆点：Lucide 的 circle 是描边圆，小尺寸下会退化成极细圆环，
+                    // 因此这里不参与图标体系，直接用 Box 绘制。
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
@@ -652,7 +657,7 @@ private fun HonorPod(
                 if (showMedal) {
                     Spacer(Modifier.width(4.dp))
                     Icon(
-                        Icons.Filled.WorkspacePremium,
+                        WujiIcons.Award,
                         null,
                         tint = Color(0xFFE0A800),
                         modifier = Modifier.size(16.dp),
@@ -660,17 +665,21 @@ private fun HonorPod(
                 }
             }
             // 物品图：透明 PNG 直接铺在卡片上；无图占位
-            val bitmap = decodeImagePath(imagePath)
+            // 后台按显示尺寸降采样解码 + 内存缓存（见 ui/item/ThumbnailLoader.kt）
+            val thumb = rememberThumbnail(imagePath, iconSize)
+            val bitmap = thumb.bitmap
             if (bitmap != null) {
                 Image(
-                    bitmap = bitmap.asImageBitmap(),
+                    bitmap = bitmap,
                     contentDescription = name,
-                    modifier = Modifier.size(iconSize),
+                    modifier = Modifier
+                        .size(iconSize)
+                        .graphicsLayer { alpha = thumb.alpha },
                     contentScale = ContentScale.Fit,
                 )
             } else {
                 Icon(
-                    Icons.Filled.BrokenImage,
+                    WujiIcons.ImageOff,
                     null,
                     tint = MaterialTheme.colorScheme.outlineVariant,
                     modifier = Modifier.size(iconSize / 2),
@@ -952,17 +961,20 @@ private fun RecentChangeRow(change: RecentChange, privacyMasked: Boolean) {
                 .background(MaterialTheme.colorScheme.surfaceContainerLow),
             contentAlignment = Alignment.Center,
         ) {
-            val bitmap = decodeImagePath(change.imagePath)
+            val thumb = rememberThumbnail(change.imagePath, 40.dp)
+            val bitmap = thumb.bitmap
             if (bitmap != null) {
                 Image(
-                    bitmap = bitmap.asImageBitmap(),
+                    bitmap = bitmap,
                     contentDescription = change.name,
-                    modifier = Modifier.size(34.dp),
+                    modifier = Modifier
+                        .size(34.dp)
+                        .graphicsLayer { alpha = thumb.alpha },
                     contentScale = ContentScale.Fit,
                 )
             } else {
                 Icon(
-                    Icons.Filled.BrokenImage,
+                    WujiIcons.ImageOff,
                     null,
                     tint = MaterialTheme.colorScheme.outlineVariant,
                     modifier = Modifier.size(18.dp),
@@ -1438,7 +1450,7 @@ private fun MomBadge(values: List<Double>) {
         ) {
             if (!flat) {
                 Icon(
-                    if (momPct > 0) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
+                    if (momPct > 0) WujiIcons.ArrowUp else WujiIcons.ArrowDown,
                     null,
                     tint = momColor,
                     modifier = Modifier.size(12.dp),
@@ -1474,7 +1486,7 @@ private fun OverBudgetBanner(state: AnalysisUiState, privacyMasked: Boolean, onC
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
         ) {
             Icon(
-                Icons.Filled.Warning,
+                WujiIcons.TriangleAlert,
                 null,
                 tint = MaterialTheme.colorScheme.onErrorContainer,
                 modifier = Modifier.size(18.dp),
@@ -1491,10 +1503,9 @@ private fun OverBudgetBanner(state: AnalysisUiState, privacyMasked: Boolean, onC
                 modifier = Modifier.weight(1f),
             )
             Icon(
-                // [Step 57] 原为 Icons.Filled.KeyboardArrowRight（已废弃）。
-                // 改用 AutoMirrored 版本，支持 RTL 布局自动镜像，
-                // 与 SettingsScreen.Chevron() 的写法保持一致。
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                // Lucide 的 chevron 是对称路径，RTL 下由布局方向自动镜像，
+                // 不再需要 Material 那套 AutoMirrored 变体。
+                WujiIcons.ChevronRight,
                 null,
                 tint = MaterialTheme.colorScheme.onErrorContainer,
                 modifier = Modifier.size(16.dp),

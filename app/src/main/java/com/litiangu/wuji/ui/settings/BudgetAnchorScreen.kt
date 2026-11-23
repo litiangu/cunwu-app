@@ -7,9 +7,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Anchor
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,6 +31,7 @@ import com.litiangu.wuji.data.db.CategoryBudgetEntity
 import com.litiangu.wuji.data.db.CategoryEntity
 import com.litiangu.wuji.data.db.WujiDatabaseProvider
 import com.litiangu.wuji.data.settings.BudgetAnchorRepository
+import com.litiangu.wuji.ui.designsystem.WujiIcons
 import com.litiangu.wuji.ui.designsystem.categoryVisual
 import com.litiangu.wuji.ui.designsystem.fireHapticIfEnabled
 import com.litiangu.wuji.ui.theme.WujiRadius
@@ -118,7 +116,7 @@ fun BudgetAnchorScreen(onBack: () -> Unit = {}) {
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            imageVector = WujiIcons.ArrowLeft,
                             contentDescription = "返回",
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
@@ -135,7 +133,7 @@ fun BudgetAnchorScreen(onBack: () -> Unit = {}) {
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Anchor,
+                            imageVector = WujiIcons.Anchor,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(22.dp),

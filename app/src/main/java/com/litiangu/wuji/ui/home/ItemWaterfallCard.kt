@@ -22,13 +22,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.ui.designsystem.categoryVisual
-import com.litiangu.wuji.ui.item.decodeImagePath
+import com.litiangu.wuji.ui.item.rememberThumbnail
 
 /**
  * 模式 B（卡片列表）瀑布流卡（Step 43），规格 §3.4 / §3.5。
@@ -65,7 +65,12 @@ fun ItemWaterfallCard(
             .clickable(onClick = onClick),
     ) {
         // 图区：高按图片比例浮动（112-149dp）
-        val itemBitmap = decodeImagePath(item.displayImagePath())
+        // 后台降采样解码 + 内存缓存（见 ui/item/ThumbnailLoader.kt）；自适应列可能略宽于 150dp，留 20% 余量
+        val thumb = rememberThumbnail(
+            item.displayImagePath(),
+            maxOf(ItemWaterfallLayout.columnWidth * 1.2f, ItemWaterfallLayout.imageMaxHeight),
+        )
+        val itemBitmap = thumb.bitmap
         val isCutout = item.displayImagePath() == item.croppedImagePath
         // [修复19-C] 抠图态用 surfaceContainerLowest（深色模式=#0E0D0E 黑），与深色页面统一。
         // 白边贴纸在黑底上对比强（白线 vs 黑），深色主体在黑底上靠白边勾勒轮廓。
@@ -80,14 +85,15 @@ fun ItemWaterfallCard(
         ) {
             if (itemBitmap != null) {
                 Image(
-                    bitmap = itemBitmap.asImageBitmap(),
+                    bitmap = itemBitmap,
                     contentDescription = item.name,
                     // Fit：完整显示不裁切；四周内缩 8dp 让抠图白边/阴影不贴图区边缘
                     //（贴边在深色 tint 底上会显得被截断，Step 43 用户反馈）
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(8.dp),
+                        .padding(8.dp)
+                        .graphicsLayer { alpha = thumb.alpha },
                 )
             } else {
                 Icon(
