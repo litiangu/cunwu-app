@@ -9,6 +9,8 @@ import com.litiangu.wuji.data.db.CategoryEntity
 import com.litiangu.wuji.data.db.CategoryBudgetEntity
 import com.litiangu.wuji.data.db.toItemInput
 import com.litiangu.wuji.domain.computeHealthScore
+import com.litiangu.wuji.ui.format.formatMoney
+import com.litiangu.wuji.ui.format.formatMoneyWithSign
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -219,7 +221,7 @@ internal fun buildHonors(items: List<ItemEntity>): Honors {
             HonorItem(
                 itemId = it.id, name = it.name,
                 imagePath = displayImagePathOf(it),
-                primaryText = "¥%,.0f/天".format(daily),
+                primaryText = "${formatMoney(daily)}/天",
                 primaryLabel = "日均成本最高",
             )
         }
@@ -231,7 +233,7 @@ internal fun buildHonors(items: List<ItemEntity>): Honors {
         HonorItem(
             itemId = it.id, name = it.name,
             imagePath = displayImagePathOf(it),
-            primaryText = "+¥%,.0f".format(it.resaleValue),
+            primaryText = formatMoneyWithSign(it.resaleValue),
             primaryLabel = "收益最高",
         )
     } ?: items.maxByOrNull { it.purchaseDate }?.let {

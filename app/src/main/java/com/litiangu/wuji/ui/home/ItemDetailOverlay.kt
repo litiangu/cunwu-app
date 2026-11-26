@@ -35,11 +35,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.TextOverflow
 import kotlin.math.abs
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.litiangu.wuji.ui.designsystem.WujiIcons
 import com.litiangu.wuji.ui.designsystem.categoryVisual
+import androidx.compose.foundation.text.TextAutoSize
 import com.litiangu.wuji.ui.home.PRIVACY_MASK
+import com.litiangu.wuji.ui.format.formatMoney
 import com.litiangu.wuji.ui.theme.WujiRadius
 import com.litiangu.wuji.ui.theme.WujiSpace
 import java.text.SimpleDateFormat
@@ -318,7 +322,7 @@ private fun ItemDetailAmount(item: ItemUiModel) {
     val finalAmount = base + extra - gain
     val delta = finalAmount - base
     val hasAdjustment = extra > 0 || gain > 0
-    val dailyText = "日均 " + "¥%.2f/天".format(dailyDepreciation(item))
+    val dailyText = "日均 " + formatMoney(dailyDepreciation(item)) + "/天"
 
     // 行1：最终金额 + 日均（有无附加均一致）
     Row(
@@ -326,14 +330,21 @@ private fun ItemDetailAmount(item: ItemUiModel) {
         verticalAlignment = Alignment.Bottom,
     ) {
         Text(
-            text = "¥%,.2f".format(finalAmount),
+            text = formatMoney(finalAmount),
+            // 右侧「日均」占固定宽度，主金额按剩余空间自动降字号，避免六位数溢出。
+            autoSize = TextAutoSize.StepBased(
+                minFontSize = 20.sp,
+                maxFontSize = 36.sp,
+                stepSize = 1.sp,
+            ),
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
             maxLines = 1,
-            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
+        Spacer(Modifier.width(8.dp))
         Text(
             text = dailyText,
             style = MaterialTheme.typography.titleMedium,
@@ -352,7 +363,7 @@ private fun ItemDetailAmount(item: ItemUiModel) {
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                text = "/¥%,.2f".format(base),
+                text = "/" + formatMoney(base),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                 maxLines = 1,
@@ -361,7 +372,7 @@ private fun ItemDetailAmount(item: ItemUiModel) {
             val absDelta = abs(delta)
             when {
                 delta > 0 -> Text(
-                    text = "+¥%,.2f".format(absDelta),
+                    text = "+" + formatMoney(absDelta),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
                     fontStyle = FontStyle.Italic,
@@ -370,7 +381,7 @@ private fun ItemDetailAmount(item: ItemUiModel) {
                     softWrap = false,
                 )
                 delta < 0 -> Text(
-                    text = "-¥%,.2f".format(absDelta),
+                    text = "-" + formatMoney(absDelta),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
                     fontStyle = FontStyle.Italic,

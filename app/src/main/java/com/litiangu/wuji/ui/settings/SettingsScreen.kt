@@ -47,6 +47,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.litiangu.wuji.data.settings.DarkModePref
 import com.litiangu.wuji.domain.DEFAULT_DAILY_BUDGET_ANCHOR
 import com.litiangu.wuji.ui.designsystem.cardOutlineStroke
+import com.litiangu.wuji.ui.format.formatMoney
 import com.litiangu.wuji.ui.designsystem.floatingBarBottomAvoidance
 import com.litiangu.wuji.data.settings.SettingsDataStore
 import com.litiangu.wuji.ui.designsystem.Haptics
@@ -245,7 +246,7 @@ fun SettingsScreen(
                         // 实时显示当前值（落库后自动更新）；与 Chevron 同行。
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "¥${if (budgetAnchor % 1.0 == 0.0) budgetAnchor.toLong().toString() else budgetAnchor.toString()} / 天",
+                                text = "${formatMoney(budgetAnchor)} / 天",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,

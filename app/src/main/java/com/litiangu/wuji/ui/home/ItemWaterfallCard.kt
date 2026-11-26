@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.ui.designsystem.categoryVisual
 import com.litiangu.wuji.ui.item.rememberThumbnail
+import com.litiangu.wuji.ui.format.formatMoney
 
 /**
  * 模式 B（卡片列表）瀑布流卡（Step 43），规格 §3.4 / §3.5。
@@ -125,7 +126,7 @@ fun ItemWaterfallCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = if (privacyMasked) PRIVACY_MASK else "¥%,.2f".format(item.netAsset),
+                    text = if (privacyMasked) PRIVACY_MASK else formatMoney(item.netAsset),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,

@@ -76,12 +76,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.TextUnit   // Step 51：金额自适应字号
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.text.TextAutoSize
 import com.litiangu.wuji.domain.DIMENSION_WEIGHTS
 import com.litiangu.wuji.ui.designsystem.WujiIcons
 import com.litiangu.wuji.ui.designsystem.categoryDotColor
 import com.litiangu.wuji.ui.designsystem.fireHapticIfEnabled
 import com.litiangu.wuji.ui.designsystem.floatingBarBottomAvoidance
 import com.litiangu.wuji.ui.home.PRIVACY_MASK
+import com.litiangu.wuji.ui.format.formatMoney
 import com.litiangu.wuji.ui.item.rememberThumbnail
 import com.litiangu.wuji.ui.designsystem.cardOutlineStroke
 import com.litiangu.wuji.ui.theme.CategoryApplianceDark
@@ -1028,7 +1030,7 @@ private fun RecentChangeRow(change: RecentChange, privacyMasked: Boolean) {
             if (privacyMasked) {
                 PRIVACY_MASK
             } else {
-                "${if (change.isIncome) "+" else "-"}¥%,.0f".format(change.amount)
+                "${if (change.isIncome) "+" else "-"}${formatMoney(change.amount)}"
             },
             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
             color = if (change.isIncome) GradeExcellentLight else MaterialTheme.colorScheme.onSurface,
@@ -1069,10 +1071,11 @@ private fun CategoryDistributionCard(state: AnalysisUiState, privacyMasked: Bool
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    // 环形图 + 环心合计
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(116.dp)) {
-                        Canvas(modifier = Modifier.size(116.dp)) {
-                            val stroke = 20.dp.toPx()
+                    // 环形图 + 环心合计。环径与描边一起调整：外径 128 / 描边 16，
+                    // 中心净空 96dp，比旧版 76dp 宽出 20dp，六位数金额也能放下。
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(128.dp)) {
+                        Canvas(modifier = Modifier.size(128.dp)) {
+                            val stroke = 16.dp.toPx()
                             val inset = stroke / 2
                             val arcSize = Size(size.width - stroke, size.height - stroke)
                             val arcTopLeft = Offset(inset, inset)
@@ -1104,16 +1107,32 @@ private fun CategoryDistributionCard(state: AnalysisUiState, privacyMasked: Bool
                                 }
                             }
                         }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(
+                            modifier = Modifier.width(92.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
                             Text(
                                 centerAmount,
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                // 以环心净空为约束自动降字号，避免金额被环压住。
+                                autoSize = TextAutoSize.StepBased(
+                                    minFontSize = 10.sp,
+                                    maxFontSize = 15.sp,
+                                    stepSize = 0.5.sp,
+                                ),
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                ),
                                 color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center,
                             )
                             Text(
                                 "共${totalCount}件",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
                             )
                         }
                     }
@@ -1496,7 +1515,7 @@ private fun OverBudgetBanner(state: AnalysisUiState, privacyMasked: Boolean, onC
                 if (privacyMasked) {
                     "近30天支出已超预算，点击查看"
                 } else {
-                    "近30天支出已超预算 ¥%,.0f，点击查看".format(state.recentSpend30 - state.monthlyBudget)
+                    "近30天支出已超预算 ${formatMoney(state.recentSpend30 - state.monthlyBudget)}，点击查看"
                 },
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.onErrorContainer,
@@ -1629,7 +1648,7 @@ private fun BudgetCard(
                             if (privacyMasked) {
                                 "已用 $overPct% · 超出 $PRIVACY_MASK"
                             } else {
-                                "已用 $overPct%% · 超出 ¥%,.0f".format(-remaining)
+                                "已用 $overPct%% · 超出 ${formatMoney(-remaining)}"
                             },
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.error,
@@ -1701,18 +1720,8 @@ private fun BudgetCard(
 }
 
 // ===== 工具函数 =====
-// 金额格式化：千分位分隔，最多 1 位小数（与设计稿 ¥9,481.6 对齐；整数则去掉 .0）。
-// 旧实现「%.1f」只强制 1 位，新 DecimalFormat "#,##0.##" 会保留全部小数位导致「¥9,481.64」
-// 过长；这里按旧行为：纯整数显整数，有小数最多 1 位并按 HALF_UP 四舍五入。
-// DecimalFormat 受当前 Locale 影响，Android 默认 zh_CN 用半角逗号，符合用户视觉习惯。
-private fun formatYuan(value: Double): String {
-    val sign = if (value < 0) "-" else ""
-    val abs = kotlin.math.abs(value)
-    val pattern = if (abs % 1.0 == 0.0) "#,##0" else "#,##0.#"
-    val df = java.text.DecimalFormat(pattern)
-    df.roundingMode = java.math.RoundingMode.HALF_UP
-    return "${sign}¥${df.format(abs)}"
-}
+// 金额格式化统一走 ui/format/Money.kt：千分位 + 固定 2 位小数（¥9,481.64）。
+private fun formatYuan(value: Double): String = formatMoney(value)
 
 // 解析 HealthGrade.colorHex（"#34C759"）为 Color；解析失败回退绿色
 private fun parseHexColor(hex: String): Color = try {

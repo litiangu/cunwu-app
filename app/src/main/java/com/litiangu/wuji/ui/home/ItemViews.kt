@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.ui.designsystem.categoryVisual
 import com.litiangu.wuji.ui.item.rememberThumbnail
+import com.litiangu.wuji.ui.format.formatMoney
 
 /**
  * 模式 C（紧凑列表）陈列馆格（Step 44），规格 §4.3 / §4.4。
@@ -110,7 +111,7 @@ fun ItemExhibitCell(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = if (privacyMasked) PRIVACY_MASK else "¥%,.2f".format(item.netAsset),
+                text = if (privacyMasked) PRIVACY_MASK else formatMoney(item.netAsset),
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

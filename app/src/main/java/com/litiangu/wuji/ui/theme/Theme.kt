@@ -20,7 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.runtime.SideEffect
+
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -267,9 +267,11 @@ fun WujiTheme(
     val windowBg = colorScheme.background.toArgb()
     val lastWindowBg = remember { mutableStateOf<Int?>(null) }
     if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as? Activity)?.window ?: return@SideEffect
-            val controller = WindowCompat.getInsetsController(window, view)
+        // 必须以 barsDark 为 key。在非组合作用域里读 State 不会建立订阅，
+        // barsDark 在半程动画后单独变化时不会触发重组，系统栏图标就永远停在旧值。
+        LaunchedEffect(barsDark, windowBg) {
+            val window = (view.context as? Activity)?.window ?: return@LaunchedEffect
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
             controller.isAppearanceLightStatusBars = !barsDark
             controller.isAppearanceLightNavigationBars = !barsDark
             if (lastWindowBg.value != windowBg) {
