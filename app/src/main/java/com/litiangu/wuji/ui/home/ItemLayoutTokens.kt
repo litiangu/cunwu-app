@@ -25,6 +25,7 @@ object ItemCardRadius {
 object ItemListRail {
     val dateWidth = 34.dp    // 日期锚区（内容右对齐）
     val channelWidth = 18.dp // 节点/竖线通道；线中心 = dateWidth + channelWidth / 2
+    val cardGap = 12.dp      // 节点通道与右卡之间的间距
     val lineWidth = 2.dp     // 竖线宽（outlineVariant，组块级绘制）
     val nodeOuter = 12.dp    // 节点外径（含背景色环）
     val nodeRing = 2.dp      // 节点环宽（背景色，把节点与竖线隔开）

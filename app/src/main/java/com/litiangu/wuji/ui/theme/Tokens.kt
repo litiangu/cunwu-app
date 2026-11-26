@@ -86,6 +86,12 @@ val TintGreenDark = Color(0xFF1A2E22)
 val BrandOrange = Color(0xFFFF5500)
 val BrandOrangeDark = Color(0xFFFF8A50)
 
+// 左滑操作按钮色：固定语义，不随明暗翻转。色值取样自 3.2 参考截图，
+// 编辑 #F2A33A（橙黄）、删除 #E6484C（红粉），前景统一纯白保证对比度。
+val SwipeActionEdit = Color(0xFFF2A33A)
+val SwipeActionDelete = Color(0xFFE6484C)
+val OnSwipeAction = Color(0xFFFFFFFF)
+
 // Health grade colors (fixed semantics, not theme-flipped)
 val GradeExcellentLight = Color(0xFF2E7D32)
 val GradeGoodLight = Color(0xFF1976D2)

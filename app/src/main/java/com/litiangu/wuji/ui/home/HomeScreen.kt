@@ -62,7 +62,8 @@ import java.util.Date
 import java.util.Locale
 import com.litiangu.wuji.ui.designsystem.CircleIconButton
 import com.litiangu.wuji.ui.designsystem.RootOverlay
-import com.litiangu.wuji.ui.designsystem.TimelineRow
+import com.litiangu.wuji.ui.designsystem.TimelineCard
+import com.litiangu.wuji.ui.designsystem.TimelineRail
 import com.litiangu.wuji.ui.designsystem.WujiIcons
 import com.litiangu.wuji.ui.designsystem.floatingBarBottomAvoidance
 import com.litiangu.wuji.ui.home.CategoryFilterBar
@@ -476,25 +477,41 @@ fun HomeScreen(
                                 Column(verticalArrangement = Arrangement.spacedBy(ItemListSpacing.row)) {
                                     entries.forEach { entry ->
                                       key(entry.item.id) {
-                                        SwipeableItemCard(
-                                            isOpen = openItemId == entry.item.id,
-                                            modifier = Modifier.animateBounds(lookahead),
-                                            onOpenChange = { open -> openItemId = if (open) entry.item.id else null },
-                                            onEdit = { onEdit(entry.item.id) },
-                                            onDelete = { pendingDelete = entry.item; openItemId = null },
-                                            // 与卡片 20dp 圆角对齐：默认 8dp 会在圆角缝隙露出删除按钮红底
-                                            cornerRadius = ItemCardRadius.listRow,
+                                        // rail 固定、card 左滑：拆成两段后日期锚与时间轴节点不参与位移，
+                                        // 卡片滑出时由 SwipeableItemCard 按行左缘裁切，日期栏始终可见。
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(ItemListRow.height)
+                                                .animateBounds(lookahead),
+                                            verticalAlignment = Alignment.CenterVertically,
                                         ) {
-                                            TimelineRow(
-                                                item = entry.item,
-                                                privacyMasked = privacyMasked,
-                                                showDateAnchor = entry.isFirstOfDay,
-                                                onClick = {
-                                                    val wasOpen = openItemId == entry.item.id
-                                                    if (openItemId != null) openItemId = null
-                                                    if (!wasOpen) detailItem = entry.item
-                                                },
-                                            )
+                                          TimelineRail(
+                                              item = entry.item,
+                                              showDateAnchor = entry.isFirstOfDay,
+                                          )
+                                          Spacer(Modifier.width(ItemListRail.cardGap))
+                                          SwipeableItemCard(
+                                              isOpen = openItemId == entry.item.id,
+                                              modifier = Modifier.weight(1f),
+                                              onOpenChange = { open -> openItemId = if (open) entry.item.id else null },
+                                              onEdit = { onEdit(entry.item.id) },
+                                              onDelete = { pendingDelete = entry.item; openItemId = null },
+                                              // 与卡片 20dp 圆角对齐：默认 8dp 会在圆角缝隙露出删除按钮红底
+                                              cornerRadius = ItemCardRadius.listRow,
+                                              // 行左缘裁切：卡片左滑不盖住固定日期栏
+                                              clipContent = true,
+                                          ) {
+                                              TimelineCard(
+                                                  item = entry.item,
+                                                  privacyMasked = privacyMasked,
+                                                  onClick = {
+                                                      val wasOpen = openItemId == entry.item.id
+                                                      if (openItemId != null) openItemId = null
+                                                      if (!wasOpen) detailItem = entry.item
+                                                  },
+                                              )
+                                          }
                                         }
                                       }  // key
                                     }

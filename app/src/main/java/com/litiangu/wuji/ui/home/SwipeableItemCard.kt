@@ -1,6 +1,8 @@
 package com.litiangu.wuji.ui.home
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.SpringSpec
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -30,6 +32,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -39,6 +42,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.litiangu.wuji.ui.designsystem.WujiIcons
 import com.litiangu.wuji.ui.designsystem.fireHapticIfEnabled
+import com.litiangu.wuji.ui.theme.OnSwipeAction
+import com.litiangu.wuji.ui.theme.SwipeActionDelete
+import com.litiangu.wuji.ui.theme.SwipeActionEdit
 import com.litiangu.wuji.ui.theme.WujiRadius
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
@@ -69,12 +75,25 @@ enum class SwipeActionDensity(
 }
 
 /**
+ * 吸附 / 回弹动画规格：260ms 弹簧缓动。
+ *
+ * stiffness 700、damping 0.85：112dp 行程约 250ms 收敛到 0.5px 阈值，
+ * 末段约 1.7px 的轻微回弹保留弹簧手感，又不会把按钮右圆角推出去太多。
+ */
+private val SwipeSettleSpec: SpringSpec<Float> = spring(
+    dampingRatio = 0.85f,
+    stiffness = 700f,
+    visibilityThreshold = 0.5f,
+)
+
+/**
  * 左滑露出右侧操作区（编辑/删除），对齐 `3.2应用主页-物品卡片-右滑操作交互界面/screen.png`。
  *
  * 手势语义（三种视图模式统一）：
  * - 按住卡片**向左**拖动 → 内容卡向左平移，右侧按钮区随之露出。
  * - 向右拖动不产生任何露出（偏移被钳制在 0），已展开时向右拖即为收起。
- * - 松手吸附：位移超过按钮区一半展开，否则回弹闭合；快速甩动按速度判定。
+ * - 松手吸附：位移超过按钮区总宽一半展开，否则回弹闭合（不按甩动速度改判方向）。
+ * - 吸附/回弹统一 260ms 弹簧缓动。
  * - 互斥：由外层传入 [isOpen] / [onOpenChange]，保证列表内同时只有一张卡展开。
  */
 @Composable
@@ -86,24 +105,26 @@ fun SwipeableItemCard(
     modifier: Modifier = Modifier,
     density: SwipeActionDensity = SwipeActionDensity.Normal,
     cornerRadius: Dp = WujiRadius.lg,
+    /** true = 内容按本组件左缘裁切。列表行左侧有固定日期栏时必须开启，否则卡片左滑会盖住 rail */
+    clipContent: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val localDensity = LocalDensity.current
     val context = LocalContext.current
     val actionWidth = density.actionWidth
     val actionWidthPx = with(localDensity) { actionWidth.toPx() }
-    // 吸附阈值：位移超过按钮区一半即展开
+    // 吸附阈值：位移超过按钮区总宽一半即展开
     val thresholdRatio = 0.5f
-    // 快速甩动的速度阈值（px/s），超过即忽略位移直接判定方向
-    val flingVelocity = 400f
 
     val scope = rememberCoroutineScope()
     // 内容卡水平偏移。0 = 闭合；-actionWidthPx = 完全展开（卡片已向左移动）
     val offsetX = remember { Animatable(0f) }
 
-    // 外部状态变化（互斥关闭其它卡）同步到动画
-    LaunchedEffect(isOpen) {
-        offsetX.animateTo(if (isOpen) -actionWidthPx else 0f)
+    // 外部状态变化（互斥关闭其它卡）同步到动画。
+    // 若动画目标已一致则跳过，避免松手动画被外部状态回写打断后重新起跑。
+    LaunchedEffect(isOpen, actionWidthPx) {
+        val target = if (isOpen) -actionWidthPx else 0f
+        if (offsetX.targetValue != target) offsetX.animateTo(target, SwipeSettleSpec)
     }
 
     val draggableState = rememberDraggableState { delta ->
@@ -124,7 +145,7 @@ fun SwipeableItemCard(
         val editClick: () -> Unit = {
             context.fireHapticIfEnabled()
             scope.launch {
-                offsetX.animateTo(0f)
+                offsetX.animateTo(0f, SwipeSettleSpec)
                 onOpenChange(false)
                 onEdit()
             }
@@ -132,95 +153,107 @@ fun SwipeableItemCard(
         val deleteClick: () -> Unit = {
             context.fireHapticIfEnabled()
             scope.launch {
-                offsetX.animateTo(0f)
+                offsetX.animateTo(0f, SwipeSettleSpec)
                 onOpenChange(false)
                 onDelete()
             }
         }
-        val actionContainer = Modifier
-            .align(Alignment.CenterEnd)
-            .fillMaxHeight()
-            .width(actionWidth)
-            .clip(RoundedCornerShape(topEnd = cornerRadius, bottomEnd = cornerRadius))
+        // 操作区：贴住内容卡右缘、随卡片同步左移（iOS 式「依次露出」——先编辑、再删除）。
+        // 闭合时整流右移一个按钮区宽度藏在行外，行外部分由 clipToBounds 裁掉，
+        // 避免按钮色块漏进页面右侧留白。
+        Box(modifier = Modifier.matchParentSize().clipToBounds()) {
+            val actionContainer = Modifier
+                .align(Alignment.CenterEnd)
+                .offset { IntOffset(actionWidthPx.roundToInt() + offsetX.value.roundToInt(), 0) }
+                .fillMaxHeight()
+                .width(actionWidth)
+                .clip(RoundedCornerShape(topEnd = cornerRadius, bottomEnd = cornerRadius))
 
-        if (density.stacked) {
-            Column(modifier = actionContainer) {
-                ActionButton(
-                    icon = WujiIcons.SquarePen,
-                    label = "编辑",
-                    iconSize = density.iconSize,
-                    showLabel = density.showLabel,
-                    backgroundColor = MaterialTheme.colorScheme.surfaceContainer,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    onClick = editClick,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    fillHeight = false,
-                )
-                ActionButton(
-                    icon = WujiIcons.Trash2,
-                    label = "删除",
-                    iconSize = density.iconSize,
-                    showLabel = density.showLabel,
-                    backgroundColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError,
-                    onClick = deleteClick,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    fillHeight = false,
-                )
-            }
-        } else {
-            Row(
-                modifier = actionContainer,
-                horizontalArrangement = Arrangement.End,
-            ) {
-                ActionButton(
-                    icon = WujiIcons.SquarePen,
-                    label = "编辑",
-                    iconSize = density.iconSize,
-                    showLabel = density.showLabel,
-                    backgroundColor = MaterialTheme.colorScheme.surfaceContainer,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    onClick = editClick,
-                    modifier = Modifier.weight(1f),
-                )
-                ActionButton(
-                    icon = WujiIcons.Trash2,
-                    label = "删除",
-                    iconSize = density.iconSize,
-                    showLabel = density.showLabel,
-                    backgroundColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError,
-                    onClick = deleteClick,
-                    modifier = Modifier.weight(1f),
-                )
+            if (density.stacked) {
+                Column(modifier = actionContainer) {
+                    ActionButton(
+                        icon = WujiIcons.SquarePen,
+                        label = "编辑",
+                        iconSize = density.iconSize,
+                        showLabel = density.showLabel,
+                        backgroundColor = SwipeActionEdit,
+                        contentColor = OnSwipeAction,
+                        onClick = editClick,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        fillHeight = false,
+                    )
+                    ActionButton(
+                        icon = WujiIcons.Trash2,
+                        label = "删除",
+                        iconSize = density.iconSize,
+                        showLabel = density.showLabel,
+                        backgroundColor = SwipeActionDelete,
+                        contentColor = OnSwipeAction,
+                        onClick = deleteClick,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        fillHeight = false,
+                    )
+                }
+            } else {
+                Row(
+                    modifier = actionContainer,
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    ActionButton(
+                        icon = WujiIcons.SquarePen,
+                        label = "编辑",
+                        iconSize = density.iconSize,
+                        showLabel = density.showLabel,
+                        backgroundColor = SwipeActionEdit,
+                        contentColor = OnSwipeAction,
+                        onClick = editClick,
+                        modifier = Modifier.weight(1f),
+                    )
+                    ActionButton(
+                        icon = WujiIcons.Trash2,
+                        label = "删除",
+                        iconSize = density.iconSize,
+                        showLabel = density.showLabel,
+                        backgroundColor = SwipeActionDelete,
+                        contentColor = OnSwipeAction,
+                        onClick = deleteClick,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
 
-        // 前景内容卡：跟随手势左移
+        // 前景内容卡：跟随手势左移。
+        // clipContent = true 时由不参与位移的外层按行左缘裁切，卡片滑出只会被切掉左侧，
+        // 不会盖住左侧固定 rail；瀑布流 / 陈列馆保持不裁，避免卡片 2dp 投影被切掉。
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
-                .draggable(
-                    orientation = Orientation.Horizontal,
-                    state = draggableState,
-                    onDragStopped = { velocity ->
-                        scope.launch {
-                            val shouldOpen = when {
-                                // 快速左甩：展开
-                                velocity < -flingVelocity -> true
-                                // 快速右甩：闭合
-                                velocity > flingVelocity -> false
-                                // 慢速：按位移过半判定
-                                else -> offsetX.value.absoluteValue > actionWidthPx * thresholdRatio
-                            }
-                            offsetX.animateTo(if (shouldOpen) -actionWidthPx else 0f)
-                            onOpenChange(shouldOpen)
-                        }
-                    },
-                ),
+                .then(if (clipContent) Modifier.clipToBounds() else Modifier),
         ) {
-            content()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                    .draggable(
+                        orientation = Orientation.Horizontal,
+                        state = draggableState,
+                        // 手指按下即接管：终止进行中的吸附/回弹，位移从当前值继续跟手
+                        onDragStarted = {
+                            scope.launch { offsetX.stop() }
+                        },
+                        onDragStopped = {
+                            scope.launch {
+                                // 纯位移判定：拖过按钮区总宽一半展开，不到一半弹回
+                                val shouldOpen = offsetX.value.absoluteValue > actionWidthPx * thresholdRatio
+                                offsetX.animateTo(if (shouldOpen) -actionWidthPx else 0f, SwipeSettleSpec)
+                                onOpenChange(shouldOpen)
+                            }
+                        },
+                    ),
+            ) {
+                content()
+            }
         }
     }
 }
